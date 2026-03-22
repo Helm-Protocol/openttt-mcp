@@ -158,6 +158,23 @@ async function main() {
         res.end(JSON.stringify({ status: "ok", server: "ttt-mcp", version: "0.1.5" }));
         return;
       }
+      // SDK requires both application/json and text/event-stream in Accept.
+      // Glama sends only application/json — Hono reads rawHeaders (not headers),
+      // so we must patch rawHeaders directly.
+      const accept = (req.headers["accept"] as string) ?? "";
+      if (!accept.includes("text/event-stream")) {
+        const newAccept = accept
+          ? `${accept}, text/event-stream`
+          : "application/json, text/event-stream";
+        req.headers["accept"] = newAccept;
+        const raw = req.rawHeaders as string[];
+        const idx = raw.findIndex((h, i) => i % 2 === 0 && h.toLowerCase() === "accept");
+        if (idx >= 0) {
+          raw[idx + 1] = newAccept;
+        } else {
+          raw.push("Accept", newAccept);
+        }
+      }
       try {
         await transport.handleRequest(req, res);
       } catch (err) {
