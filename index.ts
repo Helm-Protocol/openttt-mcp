@@ -152,7 +152,20 @@ async function main() {
     await server.connect(transport);
 
     const httpServer = createServer(async (req, res) => {
-      await transport.handleRequest(req, res);
+      // Health check for Docker/Glama container probes
+      if (req.method === "GET" && (req.url === "/health" || req.url === "/ping")) {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ status: "ok", server: "ttt-mcp", version: "0.1.5" }));
+        return;
+      }
+      try {
+        await transport.handleRequest(req, res);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Internal server error" }));
+        }
+      }
     });
 
     httpServer.listen(port, () => {
