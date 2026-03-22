@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "openttt": {
+      "command": "npx",
+      "args": ["-y", "@helm-protocol/ttt-mcp"]
+    }
+  }
+}
