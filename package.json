@@ -1,9 +1,8 @@
 {
   "name": "@helm-protocol/ttt-mcp",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "MCP Server for OpenTTT — Proof of Time tools for AI agents",
   "main": "dist/index.js",
-  "types": "dist/index.d.ts",
   "bin": {
     "ttt-mcp": "./dist/index.js"
   },
@@ -12,7 +11,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "esbuild index.ts tools.ts telemetry.ts --platform=node --target=node18 --format=cjs --outdir=dist",
     "start": "node dist/index.js",
     "dev": "npx ts-node index.ts"
   },
@@ -42,6 +41,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.11.19",
+    "esbuild": "^0.27.4",
     "typescript": "^5.3.3"
   },
   "mcpName": "io.github.Helm-Protocol/openttt-pot"
