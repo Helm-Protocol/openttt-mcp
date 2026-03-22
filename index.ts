@@ -4,6 +4,8 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { createServer } from "http";
 import { z } from "zod";
 import { potGenerate, potVerify, potQuery, potStats, potHealth } from "./tools";
 
@@ -140,9 +142,28 @@ server.tool(
 // ---------- Start Server ----------
 
 async function main() {
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-  console.error("[ttt-mcp] OpenTTT MCP Server running on stdio");
+  const port = process.env.PORT ? parseInt(process.env.PORT, 10) : null;
+
+  if (port) {
+    // HTTP mode for Docker/Glama — StreamableHTTP transport
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: undefined,
+    });
+    await server.connect(transport);
+
+    const httpServer = createServer(async (req, res) => {
+      await transport.handleRequest(req, res);
+    });
+
+    httpServer.listen(port, () => {
+      console.error(`[ttt-mcp] OpenTTT MCP Server (HTTP) on port ${port}`);
+    });
+  } else {
+    // stdio mode for npx/Claude Desktop usage
+    const transport = new StdioServerTransport();
+    await server.connect(transport);
+    console.error("[ttt-mcp] OpenTTT MCP Server running on stdio");
+  }
 }
 
 main().catch((err) => {
