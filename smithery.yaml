@@ -2,10 +2,16 @@ startCommand:
   type: stdio
   configSchema:
     type: object
-    properties: {}
+    properties:
+      HELM_API_KEY:
+        type: string
+        description: "Helm Protocol API key (hk-...). Required for pot_generate, pot_verify, pot_query. pot_health and pot_stats are free — no key needed."
+    additionalProperties: false
   commandFunction: |-
     (config) => ({
       command: "npx",
       args: ["-y", "@helm-protocol/ttt-mcp"],
-      env: {}
+      env: {
+        ...(config.HELM_API_KEY ? { HELM_API_KEY: config.HELM_API_KEY } : {})
+      }
     })
