@@ -3,16 +3,15 @@
   "name": "io.github.Helm-Protocol/openttt-pot",
   "description": "Proof-of-Time transaction ordering verification for AI agents. 5 MCP tools.",
   "repository": {
-    "url": "https://github.com/Helm-Protocol/OpenTTT",
-    "source": "github",
-    "subfolder": "mcp"
+    "url": "https://github.com/Helm-Protocol/openttt-mcp",
+    "source": "github"
   },
-  "version": "0.1.5",
+  "version": "0.2.6",
   "packages": [
     {
       "registryType": "npm",
-      "identifier": "@helm-protocol/ttt-mcp",
-      "version": "0.1.5",
+      "identifier": "openttt",
+      "version": "0.2.6",
       "transport": {
         "type": "stdio"
       }
