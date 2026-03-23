@@ -36,7 +36,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
-    "openttt": "^0.1.3",
+    "openttt": "^0.2.6",
     "zod": "^3.25.0"
   },
   "devDependencies": {
@@ -46,3 +46,4 @@
   },
   "mcpName": "io.github.Helm-Protocol/openttt-pot"
 }
+
