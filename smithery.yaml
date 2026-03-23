@@ -5,7 +5,7 @@ startCommand:
     properties: {}
   commandFunction: |-
     (config) => ({
-      command: "node",
-      args: ["dist/index.js"],
+      command: "npx",
+      args: ["-y", "@helm-protocol/ttt-mcp"],
       env: {}
     })
