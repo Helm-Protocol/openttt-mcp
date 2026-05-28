@@ -144,6 +144,47 @@ Config file locations:
 - Node.js >= 18
 - Network access for time synthesis (HTTPS to time.nist.gov, time.google.com, time.cloudflare.com)
 
+## TypeScript: MEV Bot Integration
+
+```typescript
+import { McpClient } from "@modelcontextprotocol/sdk/client/mcp.js";
+
+// Generate a Proof of Time for a transaction
+const result = await client.callTool({
+  name: "pot_generate",
+  arguments: {
+    txHash: "0xabc123...",
+    chainId: 8453,
+    poolAddress: "0xdef456..."
+  }
+});
+// Returns: { potHash, timestamp, stratum, grg_shards }
+```
+
+## Python: Hedge Fund Audit
+
+```python
+import subprocess, json
+
+result = subprocess.run(
+    ["npx", "-y", "@helm-protocol/ttt-mcp"],
+    input=json.dumps({
+        "tool": "pot_verify",
+        "potHash": "0x...",
+        "expectedChainId": 8453
+    }),
+    capture_output=True, text=True
+)
+```
+
+## Rate Limits & Pricing
+
+```
+Free Tier:   100 calls/day per IP — no API key needed
+Paid Tier:   Set TTT_API_KEY env var — unlimited
+Commercial:  peter@kenosian.com (hedge funds, DEX protocols, OTC desks)
+```
+
 ## Learn More
 
 - [OpenTTT SDK](https://www.npmjs.com/package/openttt) — The underlying SDK
@@ -152,4 +193,4 @@ Config file locations:
 
 ## License
 
-MIT
+BSL-1.1
