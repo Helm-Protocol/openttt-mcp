@@ -1,6 +1,6 @@
 {
   "name": "@helm-protocol/ttt-mcp",
-  "version": "0.1.7",
+  "version": "0.2.0",
   "description": "MCP Server for OpenTTT — Proof of Time tools for AI agents",
   "main": "dist/index.js",
   "bin": {
@@ -11,7 +11,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "esbuild index.ts tools.ts telemetry.ts --platform=node --target=node18 --format=cjs --outdir=dist",
+    "build": "esbuild index.ts tools.ts telemetry.ts auth.ts --platform=node --target=node18 --format=cjs --outdir=dist",
     "start": "node dist/index.js",
     "dev": "npx ts-node index.ts"
   },
@@ -25,7 +25,7 @@
     "mev",
     "transaction-ordering"
   ],
-  "license": "MIT",
+  "license": "BSL-1.1",
   "repository": {
     "type": "git",
     "url": "https://github.com/Helm-Protocol/openttt-mcp"

@@ -1,0 +1,32 @@
+{
+  "name": "OpenTTT — Proof of Time",
+  "description": "Cryptographic timestamp proofs for AI agents. Verify transaction ordering, prevent MEV front-running, and meet MiFIR Art.22c compliance requirements.",
+  "mcpServers": {
+    "openttt": {
+      "command": "npx",
+      "args": ["-y", "@helm-protocol/ttt-mcp@latest"]
+    }
+  },
+  "tools": [
+    "pot_generate",
+    "pot_verify",
+    "pot_query",
+    "pot_stats",
+    "pot_health"
+  ],
+  "category": "security",
+  "tags": [
+    "timestamp",
+    "mev",
+    "defi",
+    "compliance",
+    "proof-of-time",
+    "blockchain",
+    "audit"
+  ],
+  "version": "0.2.0",
+  "license": "BSL-1.1",
+  "freeTier": "100 calls/day per IP",
+  "homepage": "https://kenosian.com",
+  "repository": "https://github.com/Helm-Protocol/openttt-mcp"
+}

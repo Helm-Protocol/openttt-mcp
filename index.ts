@@ -8,6 +8,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { createServer } from "http";
 import { z } from "zod";
 import { potGenerate, potVerify, potQuery, potStats, potHealth } from "./tools";
+import { checkRateLimit, resolveApiKey } from "./auth";
 
 const server = new McpServer({
   name: "ttt-mcp",
@@ -155,8 +156,37 @@ async function main() {
       // Health check for Docker/Glama container probes
       if (req.method === "GET" && (req.url === "/health" || req.url === "/ping")) {
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ status: "ok", server: "ttt-mcp", version: "0.1.5" }));
+        res.end(JSON.stringify({ status: "ok", server: "ttt-mcp", version: "0.2.0" }));
         return;
+      }
+      // Rate limiting — free tier: 100 calls/day per IP, API key = unlimited
+      if (req.method === "POST") {
+        const apiKey = resolveApiKey(req.headers["x-api-key"] as string | undefined);
+        const clientIp =
+          (req.headers["x-forwarded-for"] as string)?.split(",")[0].trim() ||
+          req.socket.remoteAddress ||
+          "unknown";
+        const rl = checkRateLimit(apiKey, clientIp);
+        if (!rl.allowed) {
+          res.writeHead(429, {
+            "Content-Type": "application/json",
+            "Retry-After": "86400",
+            "X-RateLimit-Limit": String(parseInt(process.env.FREE_TIER_LIMIT ?? "100", 10)),
+            "X-RateLimit-Remaining": "0",
+          });
+          res.end(
+            JSON.stringify({
+              error: "rate_limit_exceeded",
+              message: "Free tier limit reached (100 calls/day). Add X-API-Key header for unlimited access.",
+              tier: "free",
+            })
+          );
+          return;
+        }
+        if (rl.tier === "free") {
+          res.setHeader("X-RateLimit-Remaining", String(rl.remaining));
+          res.setHeader("X-RateLimit-Tier", "free");
+        }
       }
       // SDK requires both application/json and text/event-stream in Accept.
       // Glama sends only application/json — Hono reads rawHeaders (not headers),
