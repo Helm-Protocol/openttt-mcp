@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "ttt": {
+      "command": "npx",
+      "args": ["-y", "@helm-protocol/ttt-mcp"],
+      "env": {
+        "TTT_API_KEY": "${TTT_API_KEY}"
+      }
+    }
+  }
+}
