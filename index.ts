@@ -8,7 +8,9 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { createServer } from "http";
 import { z } from "zod";
 import { potGenerate, potVerify, potQuery, potStats, potHealth } from "./tools";
-import { checkRateLimit, resolveApiKey } from "./auth";
+import { checkRateLimit, resolveApiKey, FREE_TIER_LIMIT } from "./auth";
+
+const IS_STDIO = !process.env.PORT;
 
 const server = new McpServer({
   name: "ttt-mcp",
@@ -26,6 +28,21 @@ server.tool(
     poolAddress: z.string().describe("DEX pool contract address"),
   },
   async (args) => {
+    if (IS_STDIO) {
+      const apiKey = resolveApiKey();
+      const rl = checkRateLimit(apiKey, "stdio");
+      if (!rl.allowed) {
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({
+            error: "rate_limit_exceeded",
+            message: `Free tier: ${FREE_TIER_LIMIT} calls/day. Set TTT_API_KEY env var for unlimited access. → kenosian.com/pricing`,
+            remaining: 0,
+            tier: "free"
+          }) }],
+          isError: true,
+        };
+      }
+    }
     try {
       const result = await potGenerate(args);
       return {
@@ -53,6 +70,21 @@ server.tool(
     poolAddress: z.string().describe("Uniswap V4 pool address (0x-prefixed)"),
   },
   async (args) => {
+    if (IS_STDIO) {
+      const apiKey = resolveApiKey();
+      const rl = checkRateLimit(apiKey, "stdio");
+      if (!rl.allowed) {
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({
+            error: "rate_limit_exceeded",
+            message: `Free tier: ${FREE_TIER_LIMIT} calls/day. Set TTT_API_KEY env var for unlimited access. → kenosian.com/pricing`,
+            remaining: 0,
+            tier: "free"
+          }) }],
+          isError: true,
+        };
+      }
+    }
     try {
       const result = await potVerify(args);
       return {
@@ -79,6 +111,21 @@ server.tool(
     limit: z.number().optional().describe("Max entries to return. Default: 100, max: 1000"),
   },
   async (args) => {
+    if (IS_STDIO) {
+      const apiKey = resolveApiKey();
+      const rl = checkRateLimit(apiKey, "stdio");
+      if (!rl.allowed) {
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({
+            error: "rate_limit_exceeded",
+            message: `Free tier: ${FREE_TIER_LIMIT} calls/day. Set TTT_API_KEY env var for unlimited access. → kenosian.com/pricing`,
+            remaining: 0,
+            tier: "free"
+          }) }],
+          isError: true,
+        };
+      }
+    }
     try {
       const result = await potQuery(args);
       return {
@@ -103,6 +150,21 @@ server.tool(
     period: z.enum(["day", "week", "month"]).describe("Time period for statistics"),
   },
   async (args) => {
+    if (IS_STDIO) {
+      const apiKey = resolveApiKey();
+      const rl = checkRateLimit(apiKey, "stdio");
+      if (!rl.allowed) {
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({
+            error: "rate_limit_exceeded",
+            message: `Free tier: ${FREE_TIER_LIMIT} calls/day. Set TTT_API_KEY env var for unlimited access. → kenosian.com/pricing`,
+            remaining: 0,
+            tier: "free"
+          }) }],
+          isError: true,
+        };
+      }
+    }
     try {
       const result = await potStats(args);
       return {

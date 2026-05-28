@@ -2,9 +2,16 @@
 // FREE_TIER_LIMIT calls/day per IP (default: 100)
 // API key present → unlimited (key validation deferred to server)
 
-const FREE_TIER_LIMIT = parseInt(process.env.FREE_TIER_LIMIT ?? "100", 10);
+import * as fs from "fs";
+import * as path from "path";
+import * as os from "os";
 
-// In-memory counter: ipOrKey → { count, resetAt }
+export const FREE_TIER_LIMIT = parseInt(process.env.FREE_TIER_LIMIT ?? "100", 10);
+
+const USAGE_DIR = path.join(os.homedir(), ".ttt-mcp");
+const USAGE_FILE = path.join(USAGE_DIR, "usage.json");
+
+// In-memory counter for HTTP mode: ip → { count, resetAt }
 interface BucketEntry {
   count: number;
   resetAt: number; // Unix ms — resets at midnight UTC
@@ -20,50 +27,73 @@ function nextMidnightUtc(): number {
   return midnight.getTime();
 }
 
+function readUsageFile(): BucketEntry {
+  try {
+    if (!fs.existsSync(USAGE_DIR)) fs.mkdirSync(USAGE_DIR, { recursive: true });
+    if (fs.existsSync(USAGE_FILE)) {
+      return JSON.parse(fs.readFileSync(USAGE_FILE, "utf8")) as BucketEntry;
+    }
+  } catch { /* ignore */ }
+  return { count: 0, resetAt: nextMidnightUtc() };
+}
+
+function writeUsageFile(entry: BucketEntry): void {
+  try {
+    if (!fs.existsSync(USAGE_DIR)) fs.mkdirSync(USAGE_DIR, { recursive: true });
+    fs.writeFileSync(USAGE_FILE, JSON.stringify(entry), "utf8");
+  } catch { /* ignore write errors */ }
+}
+
 /**
  * Check whether a call should be allowed.
  *
- * @param apiKey  - API key from X-API-Key header (undefined = anonymous free tier)
- * @param clientIp - caller IP (used as bucket key when no API key)
- * @returns { allowed: boolean; remaining: number; tier: "free" | "paid" }
+ * For stdio mode (clientIp === "stdio"): persists daily counter to ~/.ttt-mcp/usage.json
+ * For HTTP mode (real IP): uses in-memory bucket (fast, per-process)
+ *
+ * @param apiKey   - API key (undefined = anonymous free tier)
+ * @param clientIp - caller IP or "stdio" for local MCP process
  */
 export function checkRateLimit(
   apiKey: string | undefined,
   clientIp: string
 ): { allowed: boolean; remaining: number; tier: "free" | "paid" } {
-  // API key present → paid tier, no limit enforced here
   if (apiKey && apiKey.trim().length > 0) {
     return { allowed: true, remaining: -1, tier: "paid" };
   }
 
-  const bucketKey = `ip:${clientIp}`;
   const now = Date.now();
-  let entry = buckets.get(bucketKey);
 
+  // stdio mode: file-based persistence (survives server restart)
+  if (clientIp === "stdio") {
+    let entry = readUsageFile();
+    if (now >= entry.resetAt) {
+      entry = { count: 0, resetAt: nextMidnightUtc() };
+    }
+    if (entry.count >= FREE_TIER_LIMIT) {
+      return { allowed: false, remaining: 0, tier: "free" };
+    }
+    entry.count += 1;
+    writeUsageFile(entry);
+    return { allowed: true, remaining: FREE_TIER_LIMIT - entry.count, tier: "free" };
+  }
+
+  // HTTP mode: in-memory bucket
+  const bucketKey = `ip:${clientIp}`;
+  let entry = buckets.get(bucketKey);
   if (!entry || now >= entry.resetAt) {
     entry = { count: 0, resetAt: nextMidnightUtc() };
     buckets.set(bucketKey, entry);
   }
-
   if (entry.count >= FREE_TIER_LIMIT) {
-    return {
-      allowed: false,
-      remaining: 0,
-      tier: "free",
-    };
+    return { allowed: false, remaining: 0, tier: "free" };
   }
-
   entry.count += 1;
-  return {
-    allowed: true,
-    remaining: FREE_TIER_LIMIT - entry.count,
-    tier: "free",
-  };
+  return { allowed: true, remaining: FREE_TIER_LIMIT - entry.count, tier: "free" };
 }
 
 /**
- * Extract API key from environment or request headers string.
- * In stdio (npx) mode there are no HTTP headers — uses TTT_API_KEY env var.
+ * Extract API key from environment or request headers.
+ * In stdio mode there are no HTTP headers — reads TTT_API_KEY env var.
  */
 export function resolveApiKey(headerValue?: string): string | undefined {
   return headerValue?.trim() || process.env.TTT_API_KEY?.trim() || undefined;
