@@ -7,6 +7,24 @@
         "title": "Generate Proof of Time",
         "readOnlyHint": false,
         "idempotentHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": ["txHash", "chainId", "poolAddress"],
+        "properties": {
+          "txHash": {
+            "type": "string",
+            "description": "Transaction hash (hex with 0x prefix)"
+          },
+          "chainId": {
+            "type": "number",
+            "description": "Chain ID (e.g. 8453 for Base, 84532 for Base Sepolia)"
+          },
+          "poolAddress": {
+            "type": "string",
+            "description": "DEX pool contract address (0x-prefixed)"
+          }
+        }
       }
     },
     {
@@ -16,6 +34,29 @@
         "title": "Verify Proof of Time",
         "readOnlyHint": true,
         "idempotentHint": true
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": ["potHash", "grgShards", "chainId", "poolAddress"],
+        "properties": {
+          "potHash": {
+            "type": "string",
+            "description": "PoT hash to verify (hex with 0x prefix)"
+          },
+          "grgShards": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Array of hex-encoded GRG integrity shards"
+          },
+          "chainId": {
+            "type": "number",
+            "description": "EVM chain ID (e.g. 84532 for Base Sepolia)"
+          },
+          "poolAddress": {
+            "type": "string",
+            "description": "Uniswap V4 pool address (0x-prefixed)"
+          }
+        }
       }
     },
     {
@@ -25,6 +66,28 @@
         "title": "Query PoT History",
         "readOnlyHint": true,
         "idempotentHint": true
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [],
+        "properties": {
+          "poolAddress": {
+            "type": "string",
+            "description": "DEX pool address to filter by (optional)"
+          },
+          "startTime": {
+            "type": "number",
+            "description": "Start time (Unix ms, default: 24h ago)"
+          },
+          "endTime": {
+            "type": "number",
+            "description": "End time (Unix ms, default: now)"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Max entries to return (default: 100, max: 1000)"
+          }
+        }
       }
     },
     {
@@ -34,6 +97,17 @@
         "title": "PoT Statistics",
         "readOnlyHint": true,
         "idempotentHint": true
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": ["period"],
+        "properties": {
+          "period": {
+            "type": "string",
+            "enum": ["day", "week", "month"],
+            "description": "Time period for statistics"
+          }
+        }
       }
     },
     {
@@ -43,6 +117,11 @@
         "title": "Health Check",
         "readOnlyHint": true,
         "idempotentHint": true
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [],
+        "properties": {}
       }
     }
   ]
