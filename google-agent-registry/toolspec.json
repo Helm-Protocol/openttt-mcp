@@ -1,0 +1,49 @@
+{
+  "tools": [
+    {
+      "name": "pot_generate",
+      "description": "Generate a Proof of Time for a transaction. Returns cryptographically signed timestamp from NIST, Google, and Cloudflare time sources. potHash is anchored on-chain to Base Sepolia TTT ERC-1155.",
+      "annotations": {
+        "title": "Generate Proof of Time",
+        "readOnlyHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "pot_verify",
+      "description": "Verify a Proof of Time using its hash and GRG shards. Returns validity, AdaptiveSwitch mode (turbo/full), and timestamp. turbo = ordering preserved, full = tamper detected.",
+      "annotations": {
+        "title": "Verify Proof of Time",
+        "readOnlyHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "pot_query",
+      "description": "Query historical Proof of Time records from Base Sepolia subgraph by pool address or time range. Returns on-chain audit trail.",
+      "annotations": {
+        "title": "Query PoT History",
+        "readOnlyHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "pot_stats",
+      "description": "Get Proof of Time statistics: call volume, MEV deterrence rate, AdaptiveSwitch mode distribution, average confidence score.",
+      "annotations": {
+        "title": "PoT Statistics",
+        "readOnlyHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "pot_health",
+      "description": "Check PoT system health: time source status (NIST/Google/Cloudflare), subgraph sync, server uptime, current AdaptiveSwitch mode.",
+      "annotations": {
+        "title": "Health Check",
+        "readOnlyHint": true,
+        "idempotentHint": true
+      }
+    }
+  ]
+}
