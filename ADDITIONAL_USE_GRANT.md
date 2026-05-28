@@ -11,5 +11,5 @@ Non-commercial and small-scale commercial use is free:
 - DEX protocols processing > $10K/yr revenue
 - Organizations deploying in production at scale
 
-License inquiry: peter@kenosian.com
-Pricing: https://kenosian.com/pricing
+License inquiry: heime.jorgen@proton.me
+Pricing: https://github.com/Helm-Protocol/openttt-mcp#pricing

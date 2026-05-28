@@ -3,8 +3,8 @@
   "description": "Helm Protocol plugins — cryptographic timestamp proofs, MEV protection, and compliance tools for AI agents and DeFi systems.",
   "owner": {
     "name": "Heime-Jorgen",
-    "email": "peter@kenosian.com",
-    "url": "https://kenosian.com"
+    "email": "heime.jorgen@proton.me",
+    "url": "https://github.com/Helm-Protocol/OpenTTT"
   },
   "plugins": [
     {
@@ -15,7 +15,7 @@
         "url": "https://github.com/Helm-Protocol/openttt-mcp.git"
       },
       "repository": "https://github.com/Helm-Protocol/openttt-mcp",
-      "homepage": "https://kenosian.com",
+      "homepage": "https://github.com/Helm-Protocol/OpenTTT",
       "version": "0.2.1",
       "license": "BSL-1.1",
       "category": "security",

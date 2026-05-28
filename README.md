@@ -286,7 +286,7 @@ result = subprocess.run(
 ```
 Free Tier:   100 calls/day per IP — no API key needed
 Paid Tier:   Set TTT_API_KEY env var — unlimited
-Commercial:  peter@kenosian.com (hedge funds, DEX protocols, OTC desks)
+Commercial:  heime.jorgen@proton.me (hedge funds, DEX protocols, OTC desks)
 ```
 
 ## Learn More
@@ -300,6 +300,6 @@ Commercial:  peter@kenosian.com (hedge funds, DEX protocols, OTC desks)
 BSL-1.1 — free for non-commercial use.
 
 **Commercial use** (production bots, hedge funds, prop desks) requires a license.  
-→ [kenosian.com/pricing](https://kenosian.com/pricing)
+→ [Pricing](https://github.com/Helm-Protocol/openttt-mcp#pricing)
 
 Change Date: 2029-05-28 → Apache 2.0

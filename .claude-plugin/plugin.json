@@ -5,11 +5,11 @@
   "version": "0.2.1",
   "author": {
     "name": "Heime-Jorgen",
-    "email": "peter@kenosian.com",
-    "url": "https://kenosian.com"
+    "email": "heime.jorgen@proton.me",
+    "url": "https://github.com/Helm-Protocol/OpenTTT"
   },
   "license": "BSL-1.1",
-  "homepage": "https://kenosian.com",
+  "homepage": "https://github.com/Helm-Protocol/OpenTTT",
   "repository": "https://github.com/Helm-Protocol/openttt-mcp",
   "category": "security",
   "keywords": ["timestamp", "mev", "defi", "compliance", "proof-of-time", "blockchain", "audit"]

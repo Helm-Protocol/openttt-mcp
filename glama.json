@@ -2,7 +2,7 @@
   "$schema": "https://glama.ai/mcp/schemas/server.json",
   "maintainers": ["Heime-Jorgen"],
   "description": "Proof of Time for MEV bots, DEX protocols, and compliance-bound hedge funds. Eliminates sandwich attacks below the ~$87 threshold (AdaptiveSwitch). On-chain ordering proofs anchored to Base Sepolia (TTT ERC-1155). MiFIR Art.22c audit-grade timestamps. IETF draft-helmprotocol-tttps-00.",
-  "homepage": "https://kenosian.com",
+  "homepage": "https://github.com/Helm-Protocol/OpenTTT",
   "repository": "https://github.com/Helm-Protocol/openttt-mcp",
   "license": "BSL-1.1",
   "tags": ["proof-of-time", "mev-protection", "sandwich-attack", "mifir", "defi", "compliance", "tttps", "ietf", "timestamp", "blockchain"],
