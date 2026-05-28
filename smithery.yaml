@@ -1,11 +1,22 @@
+# Smithery configuration: https://smithery.ai/docs/config#smitheryyaml
+
 startCommand:
   type: stdio
-  configSchema:
-    type: object
-    properties: {}
-  commandFunction: |-
-    (config) => ({
-      command: "npx",
-      args: ["-y", "@helm-protocol/ttt-mcp"],
-      env: {}
-    })
+
+configSchema:
+  type: object
+  required: []
+  properties:
+    apiKey:
+      type: string
+      description: >
+        API key for paid tier (BOT $199/mo, DEX $499/mo, FUND $2K+/mo).
+        Free tier works without a key: 100 calls/day per IP.
+        Get a key at kenosian.com/pricing
+
+commandFunction: |-
+  (config) => ({
+    command: 'npx',
+    args: ['-y', '@helm-protocol/ttt-mcp'],
+    env: config.apiKey ? { TTT_API_KEY: config.apiKey } : {}
+  })

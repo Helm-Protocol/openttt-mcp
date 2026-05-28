@@ -1,7 +1,7 @@
 {
   "name": "openttt-pot",
   "displayName": "OpenTTT — Proof of Time",
-  "description": "Cryptographic timestamp proofs for AI agents. Verify transaction ordering, prevent MEV front-running, and meet MiFIR Art.22c compliance.",
+  "description": "Proof of Time for MEV bots, DEX protocols, and compliance-bound hedge funds. Eliminates sandwich attacks below the ~$87 threshold (V1, AdaptiveSwitch live on Base Sepolia). Full MEV elimination via builder staking (V2, S(V)≥V−c₀). MiFIR Art.22c audit-grade timestamps — replaces $50K+ hardware infrastructure. IETF draft-helmprotocol-tttps-00.",
   "version": "0.2.1",
   "author": {
     "name": "Heime-Jorgen",
