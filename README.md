@@ -193,4 +193,9 @@ Commercial:  peter@kenosian.com (hedge funds, DEX protocols, OTC desks)
 
 ## License
 
-BSL-1.1
+BSL-1.1 — free for non-commercial use.
+
+**Commercial use** (production bots, hedge funds, prop desks) requires a license.  
+→ [kenosian.com/pricing](https://kenosian.com/pricing)
+
+Change Date: 2029-05-28 → Apache 2.0
