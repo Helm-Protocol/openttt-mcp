@@ -8,14 +8,15 @@
   },
   "plugins": [
     {
-      "name": "openttt",
+      "name": "openttt-pot",
       "description": "Cryptographic timestamp proofs for AI agents. Prevent MEV front-running, verify transaction ordering, meet MiFIR Art.22c compliance.",
       "source": {
-        "source": "github",
-        "repo": "Helm-Protocol/openttt-mcp"
+        "source": "url",
+        "url": "https://github.com/Helm-Protocol/openttt-mcp.git"
       },
       "repository": "https://github.com/Helm-Protocol/openttt-mcp",
-      "version": "0.2.0",
+      "homepage": "https://kenosian.com",
+      "version": "0.2.1",
       "license": "BSL-1.1",
       "category": "security",
       "tags": ["timestamp", "mev", "defi", "compliance", "proof-of-time", "blockchain", "audit"]
