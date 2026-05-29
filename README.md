@@ -8,13 +8,13 @@
 
 ## The Problem: Workflow Amnesia
 
-Large Claude Code workflows — 20-agent Dynamic Workflows, multi-day multi-session projects, 100K+ token contexts — all face the same failure mode: **context compression erases action history.**
+Every Claude Code long-horizon workflow hits the same wall: **context compression erases action history.**
 
 Agent B has no memory of what Agent A decided. Agent A resumes after compression with no record of its own prior steps. Duplicate work. Lost decisions. State corruption.
 
-**ttt-mcp is the external nervous system that survives context compression.**
+**ttt-mcp is the external causal chain that survives context compression.**
 
-Every workflow step is anchored to a cryptographic timestamp on an **external server** — physically separate from Claude's context window. When compression happens, agents query their exact action history through the MCP tools and resume with full causal context.
+Every workflow step is anchored to a cryptographic timestamp on an **external server** — physically separate from Claude's context window. When compression happens, agents call `pot_query(eventId)` for O(1) exact step recall and resume with full causal context.
 
 ```
 Claude workflow → [context compressed] → agents call pot_query(eventId)
@@ -24,15 +24,17 @@ Claude workflow → [context compressed] → agents call pot_query(eventId)
 
 ---
 
-## Mathematical Guarantee
+## Mathematical Guarantees
 
 | Layer | Mechanism | Guarantee |
 |-------|-----------|-----------|
-| **Identity** | SHA-3 eventId (256-bit) | Collision probability 2⁻²⁵⁶ ≈ 0 — practically 100% exact step recall |
+| **Identity** | SHA-3 eventId (256-bit) | Collision probability 2⁻²⁵⁶ — practically zero |
+| **Lookup** | O(1) exact retrieval | No context consumed by history reconstruction |
 | **Ordering** | TTTPS causal timestamps | Total order on events — tamper-proof sequence proof |
 | **Causal chain** | prevEventId DAG | O(depth) traversal — depth ~100 for 1B-token workflows |
-| **Fingerprint** | Multi-layer cryptographic pipeline | Formally bounded tamper-evident step identity |
 | **Non-repudiation** | Ed25519 signature | Cryptographic proof of who acted when |
+| **Resilience** | Golay cryptographic shards | ≥97% recovery at BER=0.05, 99.88% at BER=0.02 |
+| **Persistence** | Redis AOF + 90-day TTL | Server survives context compression and restarts |
 
 ---
 
@@ -55,17 +57,17 @@ Add `TTT_API_KEY` for unlimited calls (free tier: 100 calls/day per IP).
 
 ---
 
-## Tools
+## 7 Tools
 
-| Tool | Description |
-|------|-------------|
-| `pot_generate` | Stamp a workflow step with eventId + prevEventId (builds causal chain) |
-| `pot_verify` | Verify a Proof of Time using its hash and integrity shards |
-| `pot_query` | O(1) exact lookup by eventId — call this after context compression |
-| `pot_graph` | Traverse full causal DAG — backward + forward chain from any step |
-| `pot_stats` | Get turbo/full mode statistics for a time period |
-| `pot_health` | Check system health: time sources, uptime, current mode |
-| `pot_checkpoint` | Create a compressed rollup checkpoint of workflow history |
+| Tool | Purpose |
+|------|---------|
+| `pot_generate` | Stamp a workflow step with a cryptographic timestamp |
+| `pot_verify` | Verify a PoT signature |
+| `pot_query` | O(1) exact lookup by eventId — core amnesia recovery |
+| `pot_graph` | Traverse causal DAG (backward + forward chain) |
+| `pot_checkpoint` | Roll up events into a compressed summary — use every ~100 events or before long tasks |
+| `pot_stats` | Server statistics and mode status |
+| `pot_health` | Health check |
 
 ---
 
@@ -276,16 +278,20 @@ const audit = await client.callTool({
 
 ---
 
-## Rate Limits & Pricing
+## Pricing
 
-```
-Free Tier:   100 calls/day per IP — no API key needed
-BOT Tier:    $199/mo — unlimited, SLA
-DEX Tier:    $499/mo — unlimited, priority support
-FUND Tier:   $2K+/mo — enterprise, dedicated infra
-```
+| Tier | Price | Calls/month |
+|------|-------|-------------|
+| Free | $0 | 100/day per IP — no signup |
+| Dev | $29/mo | 100K |
+| Pro | $99/mo | 1M |
+| Team | $299/mo | 10M + $0.01/1K overage |
+| Enterprise | $999+/mo | Unlimited · SLA 99.9% |
+| Platform License | Negotiated ($2M+/yr) | Unlimited · native integration |
 
-Contact: heime.jorgen@proton.me
+Full pricing: [kenosian.com/pricing](https://kenosian.com/pricing.html)
+
+Contact: peter@kenosian.com
 
 ---
 
