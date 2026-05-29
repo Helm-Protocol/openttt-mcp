@@ -15,8 +15,9 @@ const startedAt = Date.now();
 const POT_LOG_MAX = 10000;
 const potLog: PotAnchorEntry[] = [];
 
-// O(1) eventId index for causal chain traversal
+// O(1) forward and backward causal chain indexes
 const potByEventId = new Map<string, PotAnchorEntry>();
+const potByPrevEventId = new Map<string, PotAnchorEntry[]>(); // reverse index for O(1) forward chain
 
 interface PotAnchorEntry {
   potHash: string;
@@ -81,9 +82,26 @@ export async function potGenerate(args: {
     prevEventId: args.prevEventId,
     createdAt: Date.now(),
   };
+  // Ring buffer eviction — keep indexes consistent
+  if (potLog.length >= POT_LOG_MAX) {
+    const evicted = potLog.shift()!;
+    if (evicted.eventId) potByEventId.delete(evicted.eventId);
+    if (evicted.prevEventId) {
+      const siblings = potByPrevEventId.get(evicted.prevEventId);
+      if (siblings) {
+        const filtered = siblings.filter((e) => e !== evicted);
+        if (filtered.length === 0) potByPrevEventId.delete(evicted.prevEventId);
+        else potByPrevEventId.set(evicted.prevEventId, filtered);
+      }
+    }
+  }
   potLog.push(entry);
-  if (potLog.length > POT_LOG_MAX) potLog.shift();
   if (args.eventId) potByEventId.set(args.eventId, entry);
+  if (args.prevEventId) {
+    const bucket = potByPrevEventId.get(args.prevEventId) ?? [];
+    bucket.push(entry);
+    potByPrevEventId.set(args.prevEventId, bucket);
+  }
 
   return serialize({
     potHash,
@@ -233,8 +251,8 @@ export async function potGraph(args: {
     d++;
   }
 
-  // Forward chain — entries that cite this eventId as their prevEventId
-  const forwardChain = potLog.filter((e) => e.prevEventId === args.eventId);
+  // Forward chain — O(1) via reverse index (vs O(n) linear scan)
+  const forwardChain = potByPrevEventId.get(args.eventId) ?? [];
 
   const found = potByEventId.has(args.eventId);
   return serialize({
