@@ -222,7 +222,7 @@ DEX Tier:    $499/mo — unlimited, priority support
 FUND Tier:   $2K+/mo — enterprise, dedicated infra
 ```
 
-Get a key: [kenosian.com/pricing](https://kenosian.com/pricing)
+Contact: heime.jorgen@proton.me
 
 ---
 

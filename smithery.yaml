@@ -12,7 +12,7 @@ configSchema:
       description: >
         API key for paid tier (BOT $199/mo, DEX $499/mo, FUND $2K+/mo).
         Free tier works without a key: 100 calls/day per IP.
-        Get a key at kenosian.com/pricing
+        Contact heime.jorgen@proton.me for commercial access
 
 commandFunction: |-
   (config) => ({
