@@ -17,6 +17,7 @@
       "repository": "https://github.com/Helm-Protocol/openttt-mcp",
       "homepage": "https://github.com/Helm-Protocol/OpenTTT",
       "version": "0.2.2",
+      "stage": "production",
       "license": "BSL-1.1",
       "category": "developer-tools",
       "tags": ["audit", "workflow", "claude-code", "compliance", "timestamp", "proof-of-time", "ietf", "enterprise"]

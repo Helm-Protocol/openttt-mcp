@@ -6,7 +6,8 @@
       "annotations": {
         "title": "Generate Proof of Time",
         "readOnlyHint": false,
-        "idempotentHint": false
+        "idempotentHint": false,
+        "productionReady": true
       },
       "inputSchema": {
         "type": "object",
@@ -41,7 +42,8 @@
       "annotations": {
         "title": "Verify Proof of Time",
         "readOnlyHint": true,
-        "idempotentHint": true
+        "idempotentHint": true,
+        "productionReady": true
       },
       "inputSchema": {
         "type": "object",
@@ -73,7 +75,8 @@
       "annotations": {
         "title": "Query PoT History",
         "readOnlyHint": true,
-        "idempotentHint": true
+        "idempotentHint": true,
+        "productionReady": true
       },
       "inputSchema": {
         "type": "object",
@@ -104,7 +107,8 @@
       "annotations": {
         "title": "Causal Graph Traversal",
         "readOnlyHint": true,
-        "idempotentHint": true
+        "idempotentHint": true,
+        "productionReady": true
       },
       "inputSchema": {
         "type": "object",
@@ -127,7 +131,8 @@
       "annotations": {
         "title": "PoT Statistics",
         "readOnlyHint": true,
-        "idempotentHint": true
+        "idempotentHint": true,
+        "productionReady": true
       },
       "inputSchema": {
         "type": "object",
@@ -147,7 +152,8 @@
       "annotations": {
         "title": "Health Check",
         "readOnlyHint": true,
-        "idempotentHint": true
+        "idempotentHint": true,
+        "productionReady": true
       },
       "inputSchema": {
         "type": "object",

@@ -1,6 +1,7 @@
 {
   "name": "ttt-mcp",
   "version": "0.2.2",
+  "stage": "production",
   "description": "Prevents context amnesia in Claude Code Dynamic Workflows. External cryptographic timestamps survive context compression — agents recover exact action history via O(1) SHA-3 eventId lookup (2⁻²⁵⁶ collision probability). Causal DAG via prevEventId. 6 tools: pot_generate, pot_verify, pot_query, pot_graph, pot_stats, pot_health. Also: MEV ordering proofs, MiFIR Art.22c audit trail.",
   "skills": [],
   "mcpServers": ["ttt"]

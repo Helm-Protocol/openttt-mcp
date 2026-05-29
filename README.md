@@ -65,6 +65,7 @@ Add `TTT_API_KEY` for unlimited calls (free tier: 100 calls/day per IP).
 | `pot_graph` | Traverse full causal DAG — backward + forward chain from any step |
 | `pot_stats` | Get turbo/full mode statistics for a time period |
 | `pot_health` | Check system health: time sources, uptime, current mode |
+| `pot_checkpoint` | Create a compressed rollup checkpoint of workflow history |
 
 ---
 
@@ -121,6 +122,35 @@ Traverse the causal chain from any step. Returns backward chain (ancestors) and 
 
 No parameters.
 
+### pot_checkpoint
+
+Creates a compressed rollup checkpoint of workflow history.
+
+**Use when:** Approaching context limit, before long tasks, or every ~100 events.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| fromEventId | string | No | Start of range — first eventId in the causal chain to include |
+| toEventId | string | No | End of range — last eventId in the causal chain to include |
+| startTime | number | No | Unix ms. Default: 1 hour ago |
+| endTime | number | No | Unix ms. Default: now |
+| maxTokens | number | No | Approximate max tokens for rollup output. Default: 2000 |
+
+**Returns:**
+- `checkpointId` — unique checkpoint identifier
+- `rollupSummary` — compressed event history (depth-adaptive: full/compact/minimal/rollup)
+- `chainIntact` — whether the causal chain is unbroken
+- `nextCheckpointHint` — recommended events before next checkpoint
+
+**Depth-adaptive compression:**
+
+| Depth | Format | ~Tokens |
+|-------|--------|---------|
+| 1–5 | Full entry | ~200/event |
+| 6–20 | Compact (id+hash+ts) | ~80/event |
+| 21–50 | Minimal (id+ts) | ~30/event |
+| 51+ | Rollup string | ~10/event |
+
 ---
 
 ## Use Cases
@@ -157,6 +187,39 @@ const chain = await client.callTool({
 });
 // chain.backwardChain — all ancestor steps in chronological order
 // chain.forwardChain — steps that follow this one
+```
+
+**Before a long task or every ~100 events — create a checkpoint:**
+
+```typescript
+// Compress workflow history before context fills up — by causal range:
+const checkpoint = await client.callTool({
+  name: "pot_checkpoint",
+  arguments: {
+    fromEventId: "refactor_auth_module_step1",
+    toEventId: "refactor_auth_module_step3"
+  }
+});
+// checkpoint.checkpointId — store this; resume from it after compression
+// checkpoint.rollupSummary — depth-adaptive compressed history (10–200 tokens/event)
+// checkpoint.chainIntact: true — causal chain verified unbroken
+// checkpoint.nextCheckpointHint: 87 — suggested events before next checkpoint
+
+// Or compress by time window with a token budget:
+const checkpoint = await client.callTool({
+  name: "pot_checkpoint",
+  arguments: {
+    startTime: Date.now() - 3_600_000,  // last 1 hour
+    maxTokens: 1500
+  }
+});
+
+// After context compression, restore from checkpoint instead of re-querying all events:
+const history = await client.callTool({
+  name: "pot_query",
+  arguments: { eventId: checkpoint.checkpointId }
+});
+// Full causal context restored in a single call
 ```
 
 **Outcome**: Zero duplicate work. Full workflow timeline recoverable even after complete context resets.

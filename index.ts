@@ -7,7 +7,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createServer } from "http";
 import { z } from "zod";
-import { potGenerate, potVerify, potQuery, potGraph, potStats, potHealth } from "./tools";
+import { potGenerate, potVerify, potQuery, potGraph, potStats, potHealth, potCheckpoint } from "./tools";
 import { checkRateLimit, resolveApiKey, FREE_TIER_LIMIT } from "./auth";
 
 // ---------- Helper: build a fresh McpServer per HTTP request ----------
@@ -114,6 +114,26 @@ function buildMcpServer(): McpServer {
     async () => {
       try {
         const result = await potHealth();
+        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+      } catch (err: unknown) {
+        return { content: [{ type: "text" as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
+      }
+    }
+  );
+
+  s.tool(
+    "pot_checkpoint",
+    "Create a compressed rollup checkpoint of workflow history. Call this periodically to prevent token explosion when recovering from context compression. Returns checkpointId, compressed event history, chainIntact status, and nextCheckpointHint (recommended events before next checkpoint).",
+    {
+      fromEventId: z.string().optional().describe("Start of range by eventId (optional, use with toEventId)"),
+      toEventId: z.string().optional().describe("End of range by eventId (optional, use with fromEventId)"),
+      startTime: z.number().optional().describe("Unix ms start time (optional, default: 1h ago)"),
+      endTime: z.number().optional().describe("Unix ms end time (optional, default: now)"),
+      maxTokens: z.number().optional().describe("Approximate max tokens for rollup (default: 2000)"),
+    },
+    async (args) => {
+      try {
+        const result = await potCheckpoint(args);
         return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
       } catch (err: unknown) {
         return { content: [{ type: "text" as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
