@@ -1,5 +1,4 @@
 // @helm-protocol/ttt-mcp — Tool implementations for Proof of Time MCP Server
-// Uses OpenTTT SDK: TimeSynthesis, IntegrityPipeline, PotSigner, AdaptiveSwitch
 
 import { TimeSynthesis, PotSigner, AdaptiveSwitch, AdaptiveMode, Block, TTTRecord } from "openttt";
 
@@ -629,9 +628,9 @@ export async function potCheckpoint(args: {
   // chainIntact: none of the selected entries were evicted from the ring buffer
   const chainIntact = !entries.some((e) => e.eventId && evictedEventIds.has(e.eventId));
 
-  // nextCheckpointHint: recommend calling checkpoint every 100 events
+  // nextCheckpointHint: recommend calling checkpoint every 240 events (E8 kissing number)
   // Returns how many more events can be generated before next recommended checkpoint
-  const nextCheckpointHint = Math.max(10, 100 - (eventCount % 100));
+  const nextCheckpointHint = Math.max(10, 240 - (eventCount % 240));
 
   const checkpointId = `ckpt_${now}_${eventCount}`;
 
