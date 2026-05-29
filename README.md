@@ -244,7 +244,7 @@ const pot = await client.callTool({
 
 ### 3. DEX Protocol — Sandwich Deterrence
 
-**Solution**: Integrate `TTTHookSimple` (Uniswap V4 hook, Base Sepolia: `0x8C633b05b833a476925F7d9818da6E215760F2c7`). Honest builders get `turbo` mode. Tampered sequences get `full` mode (exponential backoff). Economics, not governance.
+**Solution**: Integrate `TTTHookSimple` (Uniswap V4 hook, Base Sepolia: `0x8C633b05b833a476925F7d9818da6E215760F2c7`). Honest builders get `turbo` mode. Tampered sequences get `full` mode (penalty delay). Economics, not governance.
 
 ---
 

@@ -209,9 +209,8 @@ export async function potGenerate(args: {
     grgShards = GrgPipeline.processForward(txData, args.chainId, args.poolAddress)
       .map((s: Uint8Array) => Buffer.from(s).toString("hex"));
 
-    // P4: AdaptiveSwitch.verifyBlock — called for DeFi path where block context is available
-    // Construct synthetic Block and TTTRecord from available DeFi parameters.
-    // txHash is used as a single-element txOrder; block timestamp derived from PoT.
+    // P4: DeFi path — verify block ordering using available transaction context.
+    // Construct synthetic Block and TTTRecord from DeFi parameters.
     const syntheticBlock: Block = {
       timestamp: Number(pot.timestamp / 1_000_000n), // ns → ms
       txs: [args.txHash],

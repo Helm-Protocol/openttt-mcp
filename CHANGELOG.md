@@ -9,7 +9,7 @@ All notable changes to `@helm-protocol/ttt-mcp` are documented here.
 - **P1: `pot_checkpoint` tool** — 7번째 MCP tool로 등록. `checkpointId`, `eventCount`, `chainIntact`, `nextCheckpointHint`, `rollup`, `summary`, `generatedAt` 반환. 컨텍스트 압축 후 워크플로우 히스토리 복원용.
 - **P2: depth별 압축** — `compressEntry(entry, depth)` 함수 신규 추가. depth 1-5: full / 6-20: compact / 21-50: minimal / 51+: rollup string. `pot_graph` 및 `pot_checkpoint`에 적용. 대규모 체인 탐색 시 토큰 폭발 방지.
 - **P3: 오프라인 폴백** — `potGenerate`에서 `TimeSynthesis` 실패 시 stratum:16(RFC 5905 unsynchronized) fallback PoT 자동 생성. throw 대신 로컬 타임스탬프 기반 폴백 반환.
-- **P4: AdaptiveSwitch.verifyBlock DeFi 경로 분리** — DeFi 파라미터(txHash+chainId+poolAddress) 존재 시에만 `verifyBlock` 호출. Claude Code 경로(eventId만)에서는 `getCurrentMode()` 유지. 불필요한 mode 전환 방지.
+- **P4: DeFi / Claude Code 경로 분리** — DeFi 파라미터(txHash+chainId+poolAddress) 존재 시에만 블록 검증 호출. Claude Code 경로(eventId만)에서는 현재 모드 유지. 불필요한 mode 전환 방지.
 - **P5: chainBroken 감지** — `evictedEventIds Set` 신규 추가(최대 1000개). ring buffer eviction 시 evictedEventIds에 자동 추적. `pot_graph` 반환값에 `chainBroken`, `brokenAt` 포함.
 
 ### Also Added
