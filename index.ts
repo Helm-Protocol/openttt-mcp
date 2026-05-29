@@ -7,200 +7,122 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createServer } from "http";
 import { z } from "zod";
-import { potGenerate, potVerify, potQuery, potStats, potHealth } from "./tools";
+import { potGenerate, potVerify, potQuery, potGraph, potStats, potHealth } from "./tools";
 import { checkRateLimit, resolveApiKey, FREE_TIER_LIMIT } from "./auth";
 
-const IS_STDIO = !process.env.PORT;
+// ---------- Helper: build a fresh McpServer per HTTP request ----------
+// In stateless mode, StreamableHTTPServerTransport cannot be reused across
+// requests (throws "Stateless transport cannot be reused...").
+// We therefore create a new McpServer + transport per POST request.
 
-const server = new McpServer({
-  name: "ttt-mcp",
-  version: "0.1.0",
-});
+function buildMcpServer(): McpServer {
+  const s = new McpServer({ name: "ttt-mcp", version: "0.1.0" });
 
-// ---------- Tool 1: pot_generate ----------
-
-server.tool(
-  "pot_generate",
-  "Generate a Proof of Time for a transaction. Returns potHash, timestamp, stratum, and GRG integrity shards.",
-  {
-    txHash: z.string().describe("Transaction hash (hex with 0x prefix)"),
-    chainId: z.number().describe("Chain ID (e.g. 8453 for Base, 84532 for Base Sepolia)"),
-    poolAddress: z.string().describe("DEX pool contract address"),
-  },
-  async (args) => {
-    if (IS_STDIO) {
-      const apiKey = resolveApiKey();
-      const rl = checkRateLimit(apiKey, "stdio");
-      if (!rl.allowed) {
-        return {
-          content: [{ type: "text" as const, text: JSON.stringify({
-            error: "rate_limit_exceeded",
-            message: `Free tier: ${FREE_TIER_LIMIT} calls/day. Set TTT_API_KEY env var for unlimited access. → kenosian.com/pricing`,
-            remaining: 0,
-            tier: "free"
-          }) }],
-          isError: true,
-        };
+  s.tool(
+    "pot_generate",
+    "Generate a cryptographic Proof of Time timestamp. For Claude Code workflows: use eventId + prevEventId to build a causal chain. For DeFi: use txHash + chainId + poolAddress. Either eventId or txHash is required.",
+    {
+      eventId: z.string().optional().describe("Workflow step identifier (Claude Code). E.g. 'refactor_auth_step1'"),
+      prevEventId: z.string().optional().describe("Previous step's eventId — links steps into a causal chain"),
+      txHash: z.string().optional().describe("Transaction hash (DeFi, hex with 0x prefix)"),
+      chainId: z.number().optional().describe("EVM chain ID (DeFi, e.g. 8453 for Base)"),
+      poolAddress: z.string().optional().describe("DEX pool contract address (DeFi)"),
+    },
+    async (args) => {
+      try {
+        const result = await potGenerate(args);
+        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+      } catch (err: unknown) {
+        return { content: [{ type: "text" as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
       }
     }
-    try {
-      const result = await potGenerate(args);
-      return {
-        content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
-      };
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      return {
-        content: [{ type: "text" as const, text: `Error: ${message}` }],
-        isError: true,
-      };
-    }
-  }
-);
+  );
 
-// ---------- Tool 2: pot_verify ----------
-
-server.tool(
-  "pot_verify",
-  "Verify a Proof of Time using its hash and GRG shards. Returns validity, mode (turbo/full), and timestamp.",
-  {
-    potHash: z.string().describe("PoT hash to verify (hex with 0x prefix)"),
-    grgShards: z.array(z.string()).describe("Array of hex-encoded GRG integrity shards"),
-    chainId: z.number().describe("EVM chain ID (e.g. 84532 for Base Sepolia)"),
-    poolAddress: z.string().describe("Uniswap V4 pool address (0x-prefixed)"),
-  },
-  async (args) => {
-    if (IS_STDIO) {
-      const apiKey = resolveApiKey();
-      const rl = checkRateLimit(apiKey, "stdio");
-      if (!rl.allowed) {
-        return {
-          content: [{ type: "text" as const, text: JSON.stringify({
-            error: "rate_limit_exceeded",
-            message: `Free tier: ${FREE_TIER_LIMIT} calls/day. Set TTT_API_KEY env var for unlimited access. → kenosian.com/pricing`,
-            remaining: 0,
-            tier: "free"
-          }) }],
-          isError: true,
-        };
+  s.tool(
+    "pot_verify",
+    "Verify a Proof of Time using its hash and integrity shards. Returns validity, mode (turbo/full), and timestamp.",
+    {
+      potHash: z.string().describe("PoT hash to verify (hex with 0x prefix)"),
+      grgShards: z.array(z.string()).describe("Array of hex-encoded cryptographic integrity shards"),
+      chainId: z.number().describe("EVM chain ID (e.g. 84532 for Base Sepolia)"),
+      poolAddress: z.string().describe("Uniswap V4 pool address (0x-prefixed)"),
+    },
+    async (args) => {
+      try {
+        const result = await potVerify(args);
+        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+      } catch (err: unknown) {
+        return { content: [{ type: "text" as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
       }
     }
-    try {
-      const result = await potVerify(args);
-      return {
-        content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
-      };
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      return {
-        content: [{ type: "text" as const, text: `Error: ${message}` }],
-        isError: true,
-      };
-    }
-  }
-);
+  );
 
-// ---------- Tool 3: pot_query ----------
-
-server.tool(
-  "pot_query",
-  "Query Proof of Time history from local log and on-chain subgraph.",
-  {
-    startTime: z.number().optional().describe("Start time (unix ms). Default: 24h ago"),
-    endTime: z.number().optional().describe("End time (unix ms). Default: now"),
-    limit: z.number().optional().describe("Max entries to return. Default: 100, max: 1000"),
-  },
-  async (args) => {
-    if (IS_STDIO) {
-      const apiKey = resolveApiKey();
-      const rl = checkRateLimit(apiKey, "stdio");
-      if (!rl.allowed) {
-        return {
-          content: [{ type: "text" as const, text: JSON.stringify({
-            error: "rate_limit_exceeded",
-            message: `Free tier: ${FREE_TIER_LIMIT} calls/day. Set TTT_API_KEY env var for unlimited access. → kenosian.com/pricing`,
-            remaining: 0,
-            tier: "free"
-          }) }],
-          isError: true,
-        };
+  s.tool(
+    "pot_query",
+    "Query Proof of Time records. Use eventId for exact O(1) lookup of a specific workflow step (collision probability 2^-256). Use startTime/endTime for time-range queries.",
+    {
+      eventId: z.string().optional().describe("Exact eventId lookup — call this at workflow start to restore action history after context compression"),
+      startTime: z.number().optional().describe("Start time (unix ms). Default: 24h ago"),
+      endTime: z.number().optional().describe("End time (unix ms). Default: now"),
+      limit: z.number().optional().describe("Max entries to return. Default: 100, max: 1000"),
+    },
+    async (args) => {
+      try {
+        const result = await potQuery(args);
+        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+      } catch (err: unknown) {
+        return { content: [{ type: "text" as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
       }
     }
-    try {
-      const result = await potQuery(args);
-      return {
-        content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
-      };
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      return {
-        content: [{ type: "text" as const, text: `Error: ${message}` }],
-        isError: true,
-      };
-    }
-  }
-);
+  );
 
-// ---------- Tool 4: pot_stats ----------
-
-server.tool(
-  "pot_stats",
-  "Get PoT statistics: total swaps, turbo/full counts, and turbo ratio for a given period.",
-  {
-    period: z.enum(["day", "week", "month"]).describe("Time period for statistics"),
-  },
-  async (args) => {
-    if (IS_STDIO) {
-      const apiKey = resolveApiKey();
-      const rl = checkRateLimit(apiKey, "stdio");
-      if (!rl.allowed) {
-        return {
-          content: [{ type: "text" as const, text: JSON.stringify({
-            error: "rate_limit_exceeded",
-            message: `Free tier: ${FREE_TIER_LIMIT} calls/day. Set TTT_API_KEY env var for unlimited access. → kenosian.com/pricing`,
-            remaining: 0,
-            tier: "free"
-          }) }],
-          isError: true,
-        };
+  s.tool(
+    "pot_graph",
+    "Traverse the causal chain of workflow steps. Given an eventId, returns the full backward chain (ancestors via prevEventId) and forward chain (steps that follow). Use after context compression to reconstruct the complete workflow timeline.",
+    {
+      eventId: z.string().describe("The workflow step to start traversal from"),
+      depth: z.number().optional().describe("Max backward traversal depth. Default: 10, max: 100"),
+    },
+    async (args) => {
+      try {
+        const result = await potGraph(args);
+        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+      } catch (err: unknown) {
+        return { content: [{ type: "text" as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
       }
     }
-    try {
-      const result = await potStats(args);
-      return {
-        content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
-      };
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      return {
-        content: [{ type: "text" as const, text: `Error: ${message}` }],
-        isError: true,
-      };
-    }
-  }
-);
+  );
 
-// ---------- Tool 5: pot_health ----------
-
-server.tool(
-  "pot_health",
-  "Check PoT system health: time source status, subgraph sync, server uptime, and current mode.",
-  {},
-  async () => {
-    try {
-      const result = await potHealth();
-      return {
-        content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
-      };
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      return {
-        content: [{ type: "text" as const, text: `Error: ${message}` }],
-        isError: true,
-      };
+  s.tool(
+    "pot_stats",
+    "Get PoT statistics: total swaps, turbo/full counts, and turbo ratio for a given period.",
+    { period: z.enum(["day", "week", "month"]).describe("Time period for statistics") },
+    async (args) => {
+      try {
+        const result = await potStats(args);
+        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+      } catch (err: unknown) {
+        return { content: [{ type: "text" as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
+      }
     }
-  }
-);
+  );
+
+  s.tool(
+    "pot_health",
+    "Check PoT system health: time source status, subgraph sync, server uptime, and current mode.",
+    {},
+    async () => {
+      try {
+        const result = await potHealth();
+        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+      } catch (err: unknown) {
+        return { content: [{ type: "text" as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
+      }
+    }
+  );
+
+  return s;
+}
 
 // ---------- Start Server ----------
 
@@ -208,12 +130,7 @@ async function main() {
   const port = process.env.PORT ? parseInt(process.env.PORT, 10) : null;
 
   if (port) {
-    // HTTP mode for Docker/Glama — StreamableHTTP transport
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: undefined,
-    });
-    await server.connect(transport);
-
+    // HTTP mode — per-request McpServer + transport (stateless, no reuse)
     const httpServer = createServer(async (req, res) => {
       // Health check for Docker/Glama container probes
       if (req.method === "GET" && (req.url === "/health" || req.url === "/ping")) {
@@ -239,7 +156,7 @@ async function main() {
           res.end(
             JSON.stringify({
               error: "rate_limit_exceeded",
-              message: "Free tier limit reached (100 calls/day). Add X-API-Key header for unlimited access.",
+              message: "Free tier: 100 calls/day reached. Contact heime.jorgen@proton.me for commercial access.",
               tier: "free",
             })
           );
@@ -251,7 +168,7 @@ async function main() {
         }
       }
       // SDK requires both application/json and text/event-stream in Accept.
-      // Glama sends only application/json — Hono reads rawHeaders (not headers),
+      // Smithery/Glama send only application/json — Hono reads rawHeaders (not headers),
       // so we must patch rawHeaders directly.
       const accept = (req.headers["accept"] as string) ?? "";
       if (!accept.includes("text/event-stream")) {
@@ -268,6 +185,10 @@ async function main() {
         }
       }
       try {
+        // Create fresh server + transport per request (stateless mode requirement)
+        const reqServer = buildMcpServer();
+        const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+        await reqServer.connect(transport);
         await transport.handleRequest(req, res);
       } catch (err) {
         if (!res.headersSent) {
@@ -282,8 +203,9 @@ async function main() {
     });
   } else {
     // stdio mode for npx/Claude Desktop usage
+    const stdioServer = buildMcpServer();
     const transport = new StdioServerTransport();
-    await server.connect(transport);
+    await stdioServer.connect(transport);
     console.error("[ttt-mcp] OpenTTT MCP Server running on stdio");
   }
 }

@@ -1,10 +1,10 @@
 {
   "$schema": "https://glama.ai/mcp/schemas/server.json",
   "maintainers": ["Heime-Jorgen"],
-  "description": "Proof of Time for MEV bots, DEX protocols, and compliance-bound hedge funds. Eliminates sandwich attacks below the ~$87 threshold (AdaptiveSwitch). On-chain ordering proofs anchored to Base Sepolia (TTT ERC-1155). MiFIR Art.22c audit-grade timestamps. IETF draft-helmprotocol-tttps-00.",
+  "description": "Prevents context amnesia in Claude Code Dynamic Workflows. Every workflow step anchored to an external cryptographic timestamp — survives context compression. O(1) SHA-3 eventId lookup (2⁻²⁵⁶ collision probability). Causal DAG via prevEventId chains. Also: MEV ordering proofs, MiFIR Art.22c audit-grade timestamps. IETF draft-helmprotocol-tttps-00.",
   "homepage": "https://github.com/Helm-Protocol/OpenTTT",
   "repository": "https://github.com/Helm-Protocol/openttt-mcp",
   "license": "BSL-1.1",
-  "tags": ["proof-of-time", "mev-protection", "sandwich-attack", "mifir", "defi", "compliance", "tttps", "ietf", "timestamp", "blockchain"],
+  "tags": ["context-amnesia", "workflow", "claude-code", "proof-of-time", "causal-dag", "mev-protection", "mifir", "compliance", "tttps", "ietf"],
   "documentation_url": "https://github.com/Helm-Protocol/openttt-mcp#readme"
 }

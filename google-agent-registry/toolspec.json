@@ -2,7 +2,7 @@
   "tools": [
     {
       "name": "pot_generate",
-      "description": "Generate a Proof of Time for a transaction. Returns cryptographically signed timestamp from NIST, Google, and Cloudflare time sources. potHash is anchored on-chain to Base Sepolia TTT ERC-1155.",
+      "description": "Stamp a workflow step with a cryptographic Proof of Time. For Claude Code workflows: use eventId + prevEventId to build a causal chain that survives context compression. For DeFi: use txHash + chainId + poolAddress. One of eventId or txHash is required.",
       "annotations": {
         "title": "Generate Proof of Time",
         "readOnlyHint": false,
@@ -10,26 +10,34 @@
       },
       "inputSchema": {
         "type": "object",
-        "required": ["txHash", "chainId", "poolAddress"],
+        "required": [],
         "properties": {
+          "eventId": {
+            "type": "string",
+            "description": "Workflow step identifier (Claude Code). E.g. 'refactor_auth_step1'. Call pot_query(eventId) after context compression to recover this step."
+          },
+          "prevEventId": {
+            "type": "string",
+            "description": "Previous step's eventId — links steps into a tamper-proof causal chain"
+          },
           "txHash": {
             "type": "string",
-            "description": "Transaction hash (hex with 0x prefix)"
+            "description": "Transaction hash (DeFi, hex with 0x prefix)"
           },
           "chainId": {
             "type": "number",
-            "description": "Chain ID (e.g. 8453 for Base, 84532 for Base Sepolia)"
+            "description": "EVM chain ID (DeFi, e.g. 8453 for Base, 84532 for Base Sepolia)"
           },
           "poolAddress": {
             "type": "string",
-            "description": "DEX pool contract address (0x-prefixed)"
+            "description": "DEX pool contract address (DeFi, 0x-prefixed)"
           }
         }
       }
     },
     {
       "name": "pot_verify",
-      "description": "Verify a Proof of Time using its hash and GRG shards. Returns validity, AdaptiveSwitch mode (turbo/full), and timestamp. turbo = ordering preserved, full = tamper detected.",
+      "description": "Verify a Proof of Time using its hash and integrity shards. Returns validity, mode (turbo/full), and timestamp. turbo = ordering preserved, full = tamper detected.",
       "annotations": {
         "title": "Verify Proof of Time",
         "readOnlyHint": true,
@@ -46,7 +54,7 @@
           "grgShards": {
             "type": "array",
             "items": { "type": "string" },
-            "description": "Array of hex-encoded GRG integrity shards"
+            "description": "Array of hex-encoded cryptographic integrity shards"
           },
           "chainId": {
             "type": "number",
@@ -61,7 +69,7 @@
     },
     {
       "name": "pot_query",
-      "description": "Query historical Proof of Time records from Base Sepolia subgraph by pool address or time range. Returns on-chain audit trail.",
+      "description": "Query Proof of Time records. Call with eventId for O(1) exact step lookup after context compression (collision probability 2^-256). Call with startTime/endTime for time-range queries.",
       "annotations": {
         "title": "Query PoT History",
         "readOnlyHint": true,
@@ -71,9 +79,9 @@
         "type": "object",
         "required": [],
         "properties": {
-          "poolAddress": {
+          "eventId": {
             "type": "string",
-            "description": "DEX pool address to filter by (optional)"
+            "description": "Exact step lookup — call this at workflow start to recover action history after context compression"
           },
           "startTime": {
             "type": "number",
@@ -91,8 +99,31 @@
       }
     },
     {
+      "name": "pot_graph",
+      "description": "Traverse the causal chain of workflow steps. Given an eventId, returns the full backward chain (ancestors via prevEventId) and forward chain (steps that follow). Use after context compression to reconstruct the complete workflow timeline.",
+      "annotations": {
+        "title": "Causal Graph Traversal",
+        "readOnlyHint": true,
+        "idempotentHint": true
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": ["eventId"],
+        "properties": {
+          "eventId": {
+            "type": "string",
+            "description": "The workflow step to start traversal from"
+          },
+          "depth": {
+            "type": "number",
+            "description": "Max backward traversal depth (default: 10, max: 100)"
+          }
+        }
+      }
+    },
+    {
       "name": "pot_stats",
-      "description": "Get Proof of Time statistics: call volume, MEV deterrence rate, AdaptiveSwitch mode distribution, average confidence score.",
+      "description": "Get Proof of Time statistics: call volume, mode distribution (turbo/full), average confidence score.",
       "annotations": {
         "title": "PoT Statistics",
         "readOnlyHint": true,
@@ -112,7 +143,7 @@
     },
     {
       "name": "pot_health",
-      "description": "Check PoT system health: time source status (NIST/Google/Cloudflare), subgraph sync, server uptime, current AdaptiveSwitch mode.",
+      "description": "Check PoT system health: time source status (NIST/Google/Cloudflare), subgraph sync, server uptime, current mode.",
       "annotations": {
         "title": "Health Check",
         "readOnlyHint": true,

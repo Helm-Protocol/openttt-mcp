@@ -1,8 +1,8 @@
 {
   "name": "openttt-pot",
   "displayName": "OpenTTT — Proof of Time",
-  "description": "Proof of Time for MEV bots, DEX protocols, and compliance-bound hedge funds. Eliminates sandwich attacks below the ~$87 threshold (V1, AdaptiveSwitch live on Base Sepolia). Full MEV elimination via builder staking (V2, S(V)≥V−c₀). MiFIR Art.22c audit-grade timestamps — replaces $50K+ hardware infrastructure. IETF draft-helmprotocol-tttps-00.",
-  "version": "0.2.1",
+  "description": "Prevents context amnesia in Claude Code Dynamic Workflows. External cryptographic timestamps survive context compression — agents call pot_query(eventId) for O(1) exact step recall (2⁻²⁵⁶ collision probability). Causal DAG via prevEventId. pot_graph traverses full workflow timeline. Also: MEV ordering proofs, MiFIR Art.22c audit-grade timestamps. IETF draft-helmprotocol-tttps-00.",
+  "version": "0.2.2",
   "author": {
     "name": "Heime-Jorgen",
     "email": "heime.jorgen@proton.me",
@@ -12,5 +12,5 @@
   "homepage": "https://github.com/Helm-Protocol/OpenTTT",
   "repository": "https://github.com/Helm-Protocol/openttt-mcp",
   "category": "security",
-  "keywords": ["timestamp", "mev", "defi", "compliance", "proof-of-time", "blockchain", "audit"]
+  "keywords": ["context-amnesia", "workflow", "claude-code", "causal-dag", "proof-of-time", "mev", "compliance", "audit", "tttps"]
 }

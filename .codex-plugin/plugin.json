@@ -1,7 +1,7 @@
 {
   "name": "ttt-mcp",
   "version": "0.2.2",
-  "description": "Proof of Time for MEV bots, DEX protocols, and compliance-bound hedge funds. Cryptographic timestamp proofs — eliminates sandwich attacks below ~$87 threshold (V1 live on Base Sepolia). MiFIR Art.22c audit trail. 5 tools: pot_generate, pot_verify, pot_query, pot_stats, pot_health.",
+  "description": "Prevents context amnesia in Claude Code Dynamic Workflows. External cryptographic timestamps survive context compression — agents recover exact action history via O(1) SHA-3 eventId lookup (2⁻²⁵⁶ collision probability). Causal DAG via prevEventId. 6 tools: pot_generate, pot_verify, pot_query, pot_graph, pot_stats, pot_health. Also: MEV ordering proofs, MiFIR Art.22c audit trail.",
   "skills": [],
   "mcpServers": ["ttt"]
 }

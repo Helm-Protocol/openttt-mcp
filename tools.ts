@@ -15,13 +15,18 @@ const startedAt = Date.now();
 const POT_LOG_MAX = 10000;
 const potLog: PotAnchorEntry[] = [];
 
+// O(1) eventId index for causal chain traversal
+const potByEventId = new Map<string, PotAnchorEntry>();
+
 interface PotAnchorEntry {
   potHash: string;
   timestamp: string;
   stratum: number;
   mode: string;
-  chainId: number;
-  poolAddress: string;
+  chainId?: number;
+  poolAddress?: string;
+  eventId?: string;
+  prevEventId?: string;
   createdAt: number;
 }
 
@@ -41,24 +46,30 @@ const SUBGRAPH_URL =
 // ---------- Tool: pot_generate ----------
 
 export async function potGenerate(args: {
-  txHash: string;
-  chainId: number;
-  poolAddress: string;
+  eventId?: string;
+  prevEventId?: string;
+  txHash?: string;
+  chainId?: number;
+  poolAddress?: string;
 }): Promise<unknown> {
+  if (!args.eventId && !args.txHash) {
+    throw new Error("Either eventId (Claude Code) or txHash (DeFi) is required");
+  }
   telemetryIncrement("pot_generate");
 
-  // 1. Synthesize time from multiple NTP/HTTPS sources
   const pot = await timeSynth.generateProofOfTime();
   const potHash = TimeSynthesis.getOnChainHash(pot);
 
-  // 2. GRG pipeline — encode tx data into integrity shards (black box)
-  const txData = new TextEncoder().encode(args.txHash);
-  const grgShards = GrgPipeline.processForward(txData, args.chainId, args.poolAddress);
+  // Integrity shards only when DeFi params present
+  let grgShards: string[] = [];
+  if (args.txHash && args.chainId != null && args.poolAddress) {
+    const txData = new TextEncoder().encode(args.txHash);
+    grgShards = GrgPipeline.processForward(txData, args.chainId, args.poolAddress)
+      .map((s: Uint8Array) => Buffer.from(s).toString("hex"));
+  }
 
-  // 3. Ed25519 sign the PoT hash for non-repudiation
   const signature = potSigner.signPot(potHash);
 
-  // 4. Log the anchor
   const entry: PotAnchorEntry = {
     potHash,
     timestamp: pot.timestamp.toString(),
@@ -66,13 +77,18 @@ export async function potGenerate(args: {
     mode: adaptiveSwitch.getCurrentMode(),
     chainId: args.chainId,
     poolAddress: args.poolAddress,
+    eventId: args.eventId,
+    prevEventId: args.prevEventId,
     createdAt: Date.now(),
   };
   potLog.push(entry);
   if (potLog.length > POT_LOG_MAX) potLog.shift();
+  if (args.eventId) potByEventId.set(args.eventId, entry);
 
   return serialize({
     potHash,
+    eventId: args.eventId ?? null,
+    prevEventId: args.prevEventId ?? null,
     timestamp: pot.timestamp.toString(),
     stratum: pot.stratum,
     uncertainty: pot.uncertainty,
@@ -80,7 +96,7 @@ export async function potGenerate(args: {
     sources: pot.sources,
     nonce: pot.nonce,
     expiresAt: pot.expiresAt.toString(),
-    grgShards: grgShards.map((s: Uint8Array) => Buffer.from(s).toString("hex")),
+    ...(grgShards.length > 0 && { grgShards }),
     signature: {
       issuerPubKey: signature.issuerPubKey,
       signature: signature.signature,
@@ -125,11 +141,24 @@ export async function potVerify(args: {
 // ---------- Tool: pot_query ----------
 
 export async function potQuery(args: {
+  eventId?: string;
   startTime?: number;
   endTime?: number;
   limit?: number;
 }): Promise<unknown> {
   telemetryIncrement("pot_query");
+
+  // Direct eventId lookup — O(1), exact identity match (SHA-3 collision prob = 2^-256)
+  if (args.eventId) {
+    const entry = potByEventId.get(args.eventId);
+    return serialize({
+      local: entry ? [entry] : [],
+      subgraph: [],
+      found: !!entry,
+      totalLocal: potLog.length,
+      query: { eventId: args.eventId },
+    });
+  }
 
   const limit = Math.min(args.limit ?? 100, 1000);
   const now = Date.now();
@@ -181,6 +210,40 @@ export async function potQuery(args: {
     subgraph: subgraphEntries,
     totalLocal: potLog.length,
     query: { startTime, endTime, limit },
+  });
+}
+
+// ---------- Tool: pot_graph ----------
+
+export async function potGraph(args: {
+  eventId: string;
+  depth?: number;
+}): Promise<unknown> {
+  telemetryIncrement("pot_graph");
+
+  const maxDepth = Math.min(args.depth ?? 10, 100);
+
+  // Traverse backward chain (prevEventId links) — O(depth)
+  const backwardChain: PotAnchorEntry[] = [];
+  let cursor = potByEventId.get(args.eventId);
+  let d = 0;
+  while (cursor && d < maxDepth) {
+    backwardChain.unshift(cursor); // prepend for chronological order
+    cursor = cursor.prevEventId ? potByEventId.get(cursor.prevEventId) : undefined;
+    d++;
+  }
+
+  // Forward chain — entries that cite this eventId as their prevEventId
+  const forwardChain = potLog.filter((e) => e.prevEventId === args.eventId);
+
+  const found = potByEventId.has(args.eventId);
+  return serialize({
+    eventId: args.eventId,
+    found,
+    backwardChain,
+    forwardChain,
+    chainLength: backwardChain.length + forwardChain.length,
+    reachableDepth: backwardChain.length,
   });
 }
 

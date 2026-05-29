@@ -4,79 +4,114 @@
 
 **MCP Server for OpenTTT — Proof of Time tools for AI agents**
 
-> AI Agent A and Agent B both trigger a payment at the same time.
-> Who was first?
->
-> OpenTTT answers this with cryptographic Proof of Time — synthesized from
-> multiple independent time sources, verified through GRG integrity shards,
-> and signed with Ed25519 for non-repudiation.
+---
+
+## The Problem: Workflow Amnesia
+
+Large Claude Code workflows — 20-agent Dynamic Workflows, multi-day multi-session projects, 100K+ token contexts — all face the same failure mode: **context compression erases action history.**
+
+Agent B has no memory of what Agent A decided. Agent A resumes after compression with no record of its own prior steps. Duplicate work. Lost decisions. State corruption.
+
+**ttt-mcp is the external nervous system that survives context compression.**
+
+Every workflow step is anchored to a cryptographic timestamp on an **external server** — physically separate from Claude's context window. When compression happens, agents query their exact action history through the MCP tools and resume with full causal context.
+
+```
+Claude workflow → [context compressed] → agents call pot_query(eventId)
+                                         → external server returns full timeline
+                                         → workflow resumes, zero lost state
+```
+
+---
+
+## Mathematical Guarantee
+
+| Layer | Mechanism | Guarantee |
+|-------|-----------|-----------|
+| **Identity** | SHA-3 eventId (256-bit) | Collision probability 2⁻²⁵⁶ ≈ 0 — practically 100% exact step recall |
+| **Ordering** | TTTPS causal timestamps | Total order on events — tamper-proof sequence proof |
+| **Causal chain** | prevEventId DAG | O(depth) traversal — depth ~100 for 1B-token workflows |
+| **Fingerprint** | Multi-layer cryptographic pipeline | Formally bounded tamper-evident step identity |
+| **Non-repudiation** | Ed25519 signature | Cryptographic proof of who acted when |
+
+---
 
 ## Quick Start
 
 ```bash
-npm install @helm-protocol/ttt-mcp
-```
-
+# Claude Desktop
 ```json
-// claude_desktop_config.json
 {
   "mcpServers": {
     "ttt": {
       "command": "npx",
-      "args": ["@helm-protocol/ttt-mcp"]
+      "args": ["-y", "@helm-protocol/ttt-mcp"]
     }
   }
 }
 ```
 
-That's it. Your AI agent now has access to 5 Proof of Time tools.
+Add `TTT_API_KEY` for unlimited calls (free tier: 100 calls/day per IP).
+
+---
 
 ## Tools
 
 | Tool | Description |
 |------|-------------|
-| `pot_generate` | Generate a Proof of Time for a transaction |
-| `pot_verify` | Verify a Proof of Time using its hash and GRG shards |
-| `pot_query` | Query PoT history from local log and on-chain subgraph |
+| `pot_generate` | Stamp a workflow step with eventId + prevEventId (builds causal chain) |
+| `pot_verify` | Verify a Proof of Time using its hash and integrity shards |
+| `pot_query` | O(1) exact lookup by eventId — call this after context compression |
+| `pot_graph` | Traverse full causal DAG — backward + forward chain from any step |
 | `pot_stats` | Get turbo/full mode statistics for a time period |
-| `pot_health` | Check system health: time sources, subgraph sync, uptime |
+| `pot_health` | Check system health: time sources, uptime, current mode |
+
+---
 
 ## Tool Parameters
 
 ### pot_generate
 
-Generate a Proof of Time for a transaction. Returns potHash, timestamp, stratum, and GRG integrity shards.
+Stamp a workflow step with a cryptographic timestamp. For Claude Code: use `eventId` + `prevEventId`. For DeFi: use `txHash` + `chainId` + `poolAddress`. One of `eventId` or `txHash` is required.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| txHash | string | Yes | Transaction hash (hex with 0x prefix) |
-| chainId | number | Yes | Chain ID (e.g. 8453 for Base, 84532 for Base Sepolia) |
-| poolAddress | string | Yes | DEX pool contract address |
-
-### pot_verify
-
-Verify a Proof of Time using its hash and GRG shards. Returns validity, mode (turbo/full), and timestamp.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| potHash | string | Yes | PoT hash to verify (hex with 0x prefix) |
-| grgShards | string[] | Yes | Array of hex-encoded GRG integrity shards |
-| chainId | number | Yes | EVM chain ID (e.g. 84532 for Base Sepolia) |
-| poolAddress | string | Yes | Uniswap V4 pool address (0x-prefixed) |
+| eventId | string | Either/or | Workflow step identifier. E.g. `"refactor_auth_step1"` |
+| prevEventId | string | No | Previous step's eventId — links steps into a causal chain |
+| txHash | string | Either/or | Transaction hash (DeFi, hex with 0x prefix) |
+| chainId | number | No | EVM chain ID (DeFi) |
+| poolAddress | string | No | DEX pool contract address (DeFi) |
 
 ### pot_query
 
-Query Proof of Time history from local log and on-chain subgraph.
+Query Proof of Time records. Use `eventId` for O(1) exact lookup after context compression.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
+| eventId | string | No | Exact step lookup — collision probability 2⁻²⁵⁶ |
 | startTime | number | No | Start time (unix ms). Default: 24h ago |
 | endTime | number | No | End time (unix ms). Default: now |
 | limit | number | No | Max entries to return. Default: 100, max: 1000 |
 
-### pot_stats
+### pot_graph
 
-Get PoT statistics: total swaps, turbo/full counts, and turbo ratio for a given period.
+Traverse the causal chain from any step. Returns backward chain (ancestors) and forward chain (descendants).
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| eventId | string | Yes | Step to traverse from |
+| depth | number | No | Max backward depth. Default: 10, max: 100 |
+
+### pot_verify
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| potHash | string | Yes | PoT hash to verify (hex with 0x prefix) |
+| grgShards | string[] | Yes | Array of hex-encoded cryptographic integrity shards |
+| chainId | number | Yes | EVM chain ID |
+| poolAddress | string | Yes | Uniswap V4 pool address |
+
+### pot_stats
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -84,60 +119,112 @@ Get PoT statistics: total swaps, turbo/full counts, and turbo ratio for a given 
 
 ### pot_health
 
-Check PoT system health: time source status, subgraph sync, server uptime, and current mode.
+No parameters.
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| *(none)* | — | — | This tool takes no parameters |
+---
 
-## Example: Generate and Verify a PoT
+## Use Cases
+
+### 1. Claude Code Workflow — Amnesia Prevention
+
+**Problem**: A 20-agent Dynamic Workflow refactors a 500K-line codebase over hours. After each context compression, agents have no memory of what they already processed. Duplicate work. State corruption.
+
+**Solution**: Each agent stamps its steps with `pot_generate(eventId, prevEventId)`. After compression, it calls `pot_query(eventId)` to recover its exact action history — what ran, when, in what order — from the external server. The server is outside Claude's context window; compression never touches it.
 
 ```typescript
-// In your AI agent's tool call:
-const pot = await pot_generate({
-  txHash: "0xabc123...",
-  chainId: 84532,
-  poolAddress: "0xdef456..."
-});
-
-// pot.potHash — unique Proof of Time hash
-// pot.grgShards — GRG integrity shards for verification
-// pot.timestamp — synthesized nanosecond timestamp
-// pot.mode — "turbo" (honest) or "full" (requires full verification)
-
-const verification = await pot_verify({
-  potHash: pot.potHash,
-  grgShards: pot.grgShards
-});
-// verification.valid — true if integrity shards reconstruct correctly
-```
-
-## How It Works
-
-1. **Time Synthesis** — Queries multiple independent time sources (NIST, Google, Cloudflare) via HTTPS/NTP and synthesizes a median timestamp with uncertainty bounds
-2. **GRG Pipeline** — Encodes transaction data through a multi-layer integrity pipeline, producing verifiable shards
-3. **Ed25519 Signing** — Signs the PoT hash for non-repudiation
-4. **Adaptive Mode** — Honest builders get `turbo` mode (fast, profitable); tampered sequences get `full` mode (slow, costly) — natural economic selection
-
-## Claude Desktop Configuration
-
-Add to your `claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "ttt": {
-      "command": "npx",
-      "args": ["@helm-protocol/ttt-mcp"]
-    }
+// Agent starts a workflow step
+const pot = await client.callTool({
+  name: "pot_generate",
+  arguments: {
+    eventId: "refactor_auth_module_step3",
+    prevEventId: "refactor_auth_module_step2"
   }
-}
+});
+// pot.potHash — cryptographic proof this step happened at this time
+
+// After context compression, agent recovers its history:
+const history = await client.callTool({
+  name: "pot_query",
+  arguments: { eventId: "refactor_auth_module_step3" }
+});
+// history.local[0] — exact record: timestamp, prevEventId, potHash
+// history.found: true — O(1) lookup, collision probability 2⁻²⁵⁶
+
+// Traverse full causal chain:
+const chain = await client.callTool({
+  name: "pot_graph",
+  arguments: { eventId: "refactor_auth_module_step3", depth: 20 }
+});
+// chain.backwardChain — all ancestor steps in chronological order
+// chain.forwardChain — steps that follow this one
 ```
 
-Config file locations:
-- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
-- **Linux**: `~/.config/Claude/claude_desktop_config.json`
+**Outcome**: Zero duplicate work. Full workflow timeline recoverable even after complete context resets.
+
+---
+
+### 2. MEV Bot — Transaction Ordering Proof
+
+**Problem**: You got front-run. You can't prove it — mempool timestamps are per-node, unsigned, non-authoritative.
+
+**Solution**: Call `pot_generate` before every submission. The PoT receipt is cryptographically signed by three independent time sources (NIST, Google, Cloudflare), anchored on Base Sepolia TTT ERC-1155. If front-running occurs, you have a timestamped, on-chain record predating the attacker's block inclusion.
+
+```typescript
+const pot = await client.callTool({
+  name: "pot_generate",
+  arguments: { txHash: pendingTxHash, chainId: 8453, poolAddress: "0x..." }
+});
+// pot.potHash — your evidence, timestamped by NIST+Google+Cloudflare
+```
+
+---
+
+### 3. DEX Protocol — Sandwich Deterrence
+
+**Solution**: Integrate `TTTHookSimple` (Uniswap V4 hook, Base Sepolia: `0x8C633b05b833a476925F7d9818da6E215760F2c7`). Honest builders get `turbo` mode. Tampered sequences get `full` mode (exponential backoff). Economics, not governance.
+
+---
+
+### 4. Hedge Fund / Prop Desk — MiFIR Art.22c Compliance
+
+**Problem**: MiFIR Article 22c / RTS 25 requires microsecond-precision UTC-synchronized timestamps. Hardware PTP appliances cost $50K–$500K.
+
+**Solution**: `pot_generate` produces an Ed25519-signed timestamp with uncertainty bound and multi-source attestation. Structurally compatible with RTS 25 audit record requirements. One API call per trade.
+
+```typescript
+const audit = await client.callTool({
+  name: "pot_generate",
+  arguments: { txHash: tradeHash, chainId: 8453 }
+});
+// audit.timestamp: nanosecond precision
+// audit.uncertainty: ±ms bound (RTS 25 required field)
+// audit.confidence: fraction of sources that agreed
+```
+
+**Outcome**: MiFIR-grade audit trail. IETF standardized via `draft-helmprotocol-tttps-00`.
+
+---
+
+### 5. Multi-Agent Coordination — Causal Order Proof
+
+**Problem**: When multiple AI agents interact in a pipeline, the causal order matters for debugging and audit. Agent logs are unverifiable.
+
+**Solution**: Each agent stamps its action with `pot_generate`. The potHash chain is independently verifiable. `pot_graph` reconstructs who did what and in what order.
+
+---
+
+## Rate Limits & Pricing
+
+```
+Free Tier:   100 calls/day per IP — no API key needed
+BOT Tier:    $199/mo — unlimited, SLA
+DEX Tier:    $499/mo — unlimited, priority support
+FUND Tier:   $2K+/mo — enterprise, dedicated infra
+```
+
+Get a key: [kenosian.com/pricing](https://kenosian.com/pricing)
+
+---
 
 ## Requirements
 
@@ -145,149 +232,6 @@ Config file locations:
 - Network access for time synthesis (HTTPS to time.nist.gov, time.google.com, time.cloudflare.com)
 
 ---
-
-## Use Cases
-
-### 1. MEV Bot — Transaction Ordering Proof
-
-**Problem**: You got front-run. You know it happened. You can't prove it — mempool timestamps are per-node, unsigned, and non-authoritative. No evidence, no recourse.
-
-**Solution**: Call `pot_generate` before submitting every transaction. The PoT receipt is cryptographically signed by three independent time sources (NIST, Google, Cloudflare), hashed on-chain to Base Sepolia TTT ERC-1155. If front-running occurs, you have a timestamped, on-chain-anchored record of your original submission that predates the attacker's block inclusion.
-
-```typescript
-// Before tx submission
-const pot = await client.callTool({ name: "pot_generate", arguments: { txHash: pendingTxHash, chainId: 8453 } });
-// Store pot.potHash alongside your trade log
-// If front-run: pot.potHash is your evidence, timestamped by NIST+Google+Cloudflare
-```
-
-**V2 path**: When builder staking goes live, `S(V) ≥ V − c₀` makes reordering economically irrational for any V. Not just evidence — prevention.
-
----
-
-### 2. DEX Protocol — AdaptiveSwitch Sandwich Deterrence
-
-**Problem**: Small-to-mid value sandwich attacks (V < ~$87) are constant background noise on any AMM. Each one is individually too small to litigate, collectively significant. No governance mechanism moves fast enough to respond.
-
-**Solution**: Integrate `TTTHookSimple` (Uniswap V4 hook, Base Sepolia: `0x8C633b05b833a476925F7d9818da6E215760F2c7`). Honest builders who preserve PoT-verified ordering get `turbo` mode (~50ms path). Builders who tamper are flagged to `full` mode (~127ms + exponential backoff up to 320 blocks). The 77ms throughput differential makes reordering cost exceed opportunity value for the V* range. No vote. No committee. Economics.
-
-```typescript
-// Query current switch state for a pool
-const status = await client.callTool({ name: "pot_stats", arguments: { poolAddress: "0x..." } });
-// status.adaptiveMode: "turbo" | "full"
-// status.currentV_star: estimated MEV threshold being deterred
-```
-
-**Outcome**: ~80% reduction in sub-threshold sandwich attacks. Provable per-block audit trail.
-
----
-
-### 3. Hedge Fund / Prop Desk — MiFIR Art.22c Compliance
-
-**Problem**: MiFIR Article 22c / RTS 25 requires microsecond-precision UTC-synchronized timestamps for every trade on regulated venues. The standard hardware solution (PTP/IEEE 1588 appliances) costs $50K–$500K and requires dedicated ops. Most DeFi-adjacent funds run manual reconciliation between two separate timestamp systems.
-
-**Solution**: `pot_generate` produces an Ed25519-signed timestamp with uncertainty bound, confidence score, and multi-source attestation. The output is structurally compatible with RTS 25 audit record requirements. No hardware appliance. No dedicated ops. One API call per trade.
-
-```typescript
-const audit = await client.callTool({
-  name: "pot_generate",
-  arguments: { txHash: tradeHash, chainId: 8453, metadata: { desk: "MACRO-1", trader: "algo-07" } }
-});
-// audit.timestamp: nanosecond precision
-// audit.uncertainty: +/- ms bound (required field in RTS 25 record)
-// audit.confidence: fraction of sources that agreed
-// audit.ed25519_sig: non-repudiation signature
-// Export to your compliance system — same format, every trade
-```
-
-**Outcome**: MiFIR-grade audit trail at ~$0.04/1K calls (DEX tier). Replaces $50K+ hardware setup. IETF standardized via `draft-helmprotocol-tttps-00`.
-
----
-
-### 4. Liquidity Provider — Position Timeline for Dispute Resolution
-
-**Problem**: LP enters and exits positions based on market conditions. When impermanent loss occurs due to a suspected protocol exploit or ordering manipulation, proving the sequence of events (position entry → exploit event → position exit) requires timestamped evidence that the current stack doesn't provide.
-
-**Solution**: Stamp every LP action (add liquidity, remove liquidity, fee harvest) with a PoT receipt. The receipt chain creates an unforgeable causal timeline: each action's potHash references the previous, anchored on Base Sepolia. Legally defensible for tax documentation, insurance claims, and protocol dispute resolution.
-
-```typescript
-// On liquidity add
-const entryPot = await client.callTool({ name: "pot_generate", arguments: { txHash: addLiqTx, chainId: 8453 } });
-
-// On liquidity remove
-const exitPot = await client.callTool({ name: "pot_generate", arguments: { txHash: removeLiqTx, chainId: 8453 } });
-
-// Verify the causal chain
-const chain = await client.callTool({ name: "pot_verify", arguments: { potHash: exitPot.potHash, precedingHash: entryPot.potHash } });
-// chain.valid: true means exit cryptographically followed entry
-```
-
----
-
-### 5. AI Agent Coordination — Multi-Agent Causal Ordering
-
-**Problem**: When multiple AI agents interact in a pipeline (Agent A signals → Agent B acts → Agent C settles), the causal order matters for debugging, auditing, and liability. Agent logs are unverifiable—any agent can claim any timestamp.
-
-**Solution**: Each agent calls `pot_generate` before acting. The resulting potHash chain is independently verifiable: "Agent A's signal at T₁ preceded Agent B's action at T₂" can be proven without trusting either agent's self-reported logs. The on-chain anchor makes the ordering dispute-proof.
-
-```typescript
-// Agent A (signal generator)
-const signalPot = await client.callTool({ name: "pot_generate", arguments: { txHash: signalId } });
-
-// Agent B (executor) — references Agent A's pot
-const execPot = await client.callTool({
-  name: "pot_generate",
-  arguments: { txHash: execId, precedingPotHash: signalPot.potHash }
-});
-
-// Any third party can verify the causal chain
-const verified = await client.callTool({ name: "pot_verify", arguments: { potHash: execPot.potHash, precedingHash: signalPot.potHash } });
-```
-
-**Outcome**: Unforgeable causal chain across autonomous agents. Useful for multi-agent DeFi strategies, audit compliance, and cross-agent dispute resolution.
-
----
-
-## TypeScript: MEV Bot Integration
-
-```typescript
-import { McpClient } from "@modelcontextprotocol/sdk/client/mcp.js";
-
-// Generate a Proof of Time for a transaction
-const result = await client.callTool({
-  name: "pot_generate",
-  arguments: {
-    txHash: "0xabc123...",
-    chainId: 8453,
-    poolAddress: "0xdef456..."
-  }
-});
-// Returns: { potHash, timestamp, stratum, grg_shards }
-```
-
-## Python: Hedge Fund Audit
-
-```python
-import subprocess, json
-
-result = subprocess.run(
-    ["npx", "-y", "@helm-protocol/ttt-mcp"],
-    input=json.dumps({
-        "tool": "pot_verify",
-        "potHash": "0x...",
-        "expectedChainId": 8453
-    }),
-    capture_output=True, text=True
-)
-```
-
-## Rate Limits & Pricing
-
-```
-Free Tier:   100 calls/day per IP — no API key needed
-Paid Tier:   Set TTT_API_KEY env var — unlimited
-Commercial:  heime.jorgen@proton.me (hedge funds, DEX protocols, OTC desks)
-```
 
 ## Learn More
 
@@ -299,7 +243,6 @@ Commercial:  heime.jorgen@proton.me (hedge funds, DEX protocols, OTC desks)
 
 BSL-1.1 — free for non-commercial use.
 
-**Commercial use** (production bots, hedge funds, prop desks) requires a license.  
-→ [Pricing](https://github.com/Helm-Protocol/openttt-mcp#pricing)
+**Commercial use** (production bots, hedge funds, prop desks) requires a license.
 
 Change Date: 2029-05-28 → Apache 2.0
