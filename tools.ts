@@ -1,7 +1,14 @@
 // @helm-protocol/ttt-mcp — Tool implementations for Proof of Time MCP Server
 // Uses OpenTTT SDK: TimeSynthesis, IntegrityPipeline, PotSigner, AdaptiveSwitch
 
-import { TimeSynthesis, GrgPipeline, PotSigner, AdaptiveSwitch, AdaptiveMode, Block, TTTRecord } from "openttt";
+import { TimeSynthesis, PotSigner, AdaptiveSwitch, AdaptiveMode, Block, TTTRecord } from "openttt";
+
+// GrgPipeline is not exported from openttt@0.2.x public API.
+// Access via require to avoid tsc TS2305 while preserving runtime behavior.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const GrgPipeline: { processForward: (data: Uint8Array, chainId: number, poolAddress: string) => Uint8Array[]; processInverse: (shards: Uint8Array[], _pad: number, chainId: number, poolAddress: string) => Uint8Array } =
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  (require("openttt") as Record<string, unknown>).GrgPipeline as typeof GrgPipeline ?? null;
 import { telemetryIncrement } from "./telemetry";
 import Redis from "ioredis";
 

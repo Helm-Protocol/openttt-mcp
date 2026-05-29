@@ -13,7 +13,23 @@
   "scripts": {
     "build": "esbuild index.ts tools.ts telemetry.ts auth.ts --platform=node --target=node18 --format=cjs --outdir=dist",
     "start": "node dist/index.js",
-    "dev": "npx ts-node index.ts"
+    "dev": "npx ts-node index.ts",
+    "test": "jest --forceExit"
+  },
+  "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "node",
+    "testMatch": ["**/__tests__/**/*.test.ts"],
+    "moduleNameMapper": {
+      "^openttt$": "<rootDir>/node_modules/openttt/dist/index.js"
+    },
+    "transform": {
+      "^.+\\.tsx?$": ["ts-jest", {
+        "tsconfig": {
+          "module": "CommonJS"
+        }
+      }]
+    }
   },
   "keywords": [
     "mcp",
@@ -41,8 +57,11 @@
     "zod": "^3.25.0"
   },
   "devDependencies": {
+    "@types/jest": "^30.0.0",
     "@types/node": "^20.11.19",
     "esbuild": "^0.27.4",
+    "jest": "^30.4.2",
+    "ts-jest": "^29.4.11",
     "typescript": "^5.3.3"
   },
   "mcpName": "io.github.Helm-Protocol/openttt-pot"
