@@ -1,6 +1,6 @@
 {
   "name": "helm-protocol",
-  "description": "Helm Protocol plugins — cryptographic timestamp proofs, MEV protection, and compliance tools for AI agents and DeFi systems.",
+  "description": "Cryptographic audit trail for Claude Code. Every workflow step and agent action — timestamped, tamper-proof, and verifiable.",
   "owner": {
     "name": "Heime-Jorgen",
     "email": "heime.jorgen@proton.me",
@@ -9,17 +9,17 @@
   "plugins": [
     {
       "name": "openttt-pot",
-      "description": "Cryptographic timestamp proofs for AI agents. Prevent MEV front-running, verify transaction ordering, meet MiFIR Art.22c compliance.",
+      "description": "Add cryptographic timestamps to Claude Code Dynamic Workflows and multi-agent tasks. IETF TTTPS-compliant. MiFIR Art.22c audit-grade. Instantly prove when each agent acted, what it produced, and in what order.",
       "source": {
         "source": "url",
         "url": "https://github.com/Helm-Protocol/openttt-mcp.git"
       },
       "repository": "https://github.com/Helm-Protocol/openttt-mcp",
       "homepage": "https://github.com/Helm-Protocol/OpenTTT",
-      "version": "0.2.1",
+      "version": "0.2.2",
       "license": "BSL-1.1",
-      "category": "security",
-      "tags": ["timestamp", "mev", "defi", "compliance", "proof-of-time", "blockchain", "audit"]
+      "category": "developer-tools",
+      "tags": ["audit", "workflow", "claude-code", "compliance", "timestamp", "proof-of-time", "ietf", "enterprise"]
     }
   ]
 }

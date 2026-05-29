@@ -4,12 +4,11 @@
 
 **MCP Server for OpenTTT — Proof of Time tools for AI agents**
 
-> AI Agent A and Agent B both trigger a payment at the same time.
-> Who was first?
+> You run a Claude Code Dynamic Workflow — 20 parallel agents rewriting a codebase.
+> Which agent made which decision? At exactly what time? In what order?
 >
-> OpenTTT answers this with cryptographic Proof of Time — synthesized from
-> multiple independent time sources, verified through GRG integrity shards,
-> and signed with Ed25519 for non-repudiation.
+> OpenTTT answers this with cryptographic Proof of Time — tamper-proof,
+> IETF-standardized, and audit-grade from the moment each agent acts.
 
 ## Quick Start
 
@@ -30,6 +29,30 @@ npm install @helm-protocol/ttt-mcp
 ```
 
 That's it. Your AI agent now has access to 5 Proof of Time tools.
+
+## Use with Claude Code Dynamic Workflows
+
+Type "workflow" in Claude Code to spin up parallel agents. Add OpenTTT to timestamp every step:
+
+```json
+// claude_desktop_config.json
+{
+  "mcpServers": {
+    "ttt": {
+      "command": "npx",
+      "args": ["@helm-protocol/ttt-mcp"]
+    }
+  }
+}
+```
+
+Each agent can now call `pot_generate` to create a tamper-proof record of its action:
+- **Who** acted (agent ID)
+- **What** was produced (content hash)
+- **When** exactly (TTTPS multi-source timestamp)
+- **In what order** (GRG integrity shards)
+
+Use cases: compliance audit trails, legal document timestamping, regulated industry AI workflows.
 
 ## Tools
 
