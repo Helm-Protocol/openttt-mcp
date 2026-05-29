@@ -1,6 +1,6 @@
 {
   "name": "@helm-protocol/ttt-mcp",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "MCP Server for OpenTTT — Proof of Time tools for AI agents",
   "main": "dist/index.js",
   "bin": {
@@ -36,6 +36,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
+    "ioredis": "^5.11.0",
     "openttt": "^0.2.13",
     "zod": "^3.25.0"
   },

@@ -3,6 +3,16 @@
 
 import { TimeSynthesis, GrgPipeline, PotSigner, AdaptiveSwitch, AdaptiveMode, Block, TTTRecord } from "openttt";
 import { telemetryIncrement } from "./telemetry";
+import Redis from "ioredis";
+
+// ---------- Redis (optional persistence) ----------
+
+export const redis = new Redis(process.env.REDIS_URL ?? "redis://127.0.0.1:6379", {
+  lazyConnect: true,
+  enableOfflineQueue: false,
+  maxRetriesPerRequest: 1,
+});
+redis.on("error", () => {}); // silent — Redis is optional persistence
 
 // ---------- Shared Instances ----------
 
@@ -49,20 +59,103 @@ const SUBGRAPH_URL =
   "https://api.studio.thegraph.com/query/1744392/openttt-base-sepolia/v0.1.0";
 
 // P2: Depth-based entry compression to prevent token explosion in large chain traversals
-function compressEntry(entry: PotAnchorEntry, depth: number): unknown {
-  if (depth <= 5) return entry; // full
-  if (depth <= 20) return {    // compact
+// depthThreshold overrides: calculated from maxTokens ÷ estimated entries when provided
+function compressEntry(entry: PotAnchorEntry, depth: number, depthThreshold?: { compact: number; minimal: number; rollup: number }): unknown {
+  const t = depthThreshold ?? { compact: 5, minimal: 20, rollup: 50 };
+  if (depth <= t.compact) return entry; // full
+  if (depth <= t.minimal) return {      // compact
     eventId: entry.eventId,
     potHash: entry.potHash,
     timestamp: entry.timestamp,
     prevEventId: entry.prevEventId,
   };
-  if (depth <= 50) return {    // minimal
+  if (depth <= t.rollup) return {       // minimal
     eventId: entry.eventId,
     timestamp: entry.timestamp,
   };
   // rollup string for deep ancestry — one line per event
   return `${entry.eventId ?? "?"}@${entry.timestamp}`;
+}
+
+// P2: Derive compression thresholds from maxTokens.
+// Rough char-per-entry estimates: full≈300chars, compact≈120chars, minimal≈60chars, rollup≈30chars
+// charBudget = maxTokens × 4 (token≈4chars heuristic)
+function depthThresholdFromTokens(maxTokens: number, entryCount: number): { compact: number; minimal: number; rollup: number } {
+  const charBudget = maxTokens * 4;
+  // Proportional depth allocation: 60% budget for full, next 25% for compact, next 10% for minimal
+  const fullBudget = charBudget * 0.60;
+  const compactBudget = charBudget * 0.25;
+  const minimalBudget = charBudget * 0.10;
+
+  const fullDepth = Math.max(1, Math.floor(fullBudget / 300));
+  const compactDepth = fullDepth + Math.max(0, Math.floor(compactBudget / 120));
+  const minimalDepth = compactDepth + Math.max(0, Math.floor(minimalBudget / 60));
+
+  // Cap at entryCount to avoid useless expansion
+  return {
+    compact: Math.min(fullDepth, entryCount),
+    minimal: Math.min(compactDepth, entryCount),
+    rollup: Math.min(minimalDepth, entryCount),
+  };
+}
+
+// ---------- DAG Restoration (called by index.ts on startup) ----------
+
+// Restores a persisted entry directly into in-memory structures.
+// Used by restoreDAGFromRedis() in index.ts to rebuild DAG after server restart.
+export function restoreDagEntry(entry: {
+  eventId: string;
+  prevEventId?: string | null;
+  potHash: string;
+  timestamp: string;
+  stratum: number;
+  mode: string;
+  createdAt: number;
+  chainId?: number | null;
+  poolAddress?: string | null;
+}): void {
+  if (potByEventId.has(entry.eventId)) return; // already present (duplicate key)
+
+  const e: PotAnchorEntry = {
+    potHash: entry.potHash,
+    timestamp: entry.timestamp,
+    stratum: entry.stratum,
+    mode: entry.mode,
+    chainId: entry.chainId ?? undefined,
+    poolAddress: entry.poolAddress ?? undefined,
+    eventId: entry.eventId,
+    prevEventId: entry.prevEventId ?? undefined,
+    createdAt: entry.createdAt,
+  };
+
+  // Respect ring buffer limit during restore
+  if (potLog.length >= POT_LOG_MAX) {
+    const evicted = potLog.shift()!;
+    if (evicted.eventId) {
+      potByEventId.delete(evicted.eventId);
+      evictedEventIds.add(evicted.eventId);
+      if (evictedEventIds.size > EVICTED_MAX) {
+        const first = evictedEventIds.values().next().value;
+        if (first !== undefined) evictedEventIds.delete(first);
+      }
+    }
+    if (evicted.prevEventId) {
+      const siblings = potByPrevEventId.get(evicted.prevEventId);
+      if (siblings) {
+        const filtered = siblings.filter((s) => s !== evicted);
+        if (filtered.length === 0) potByPrevEventId.delete(evicted.prevEventId);
+        else potByPrevEventId.set(evicted.prevEventId, filtered);
+      }
+    }
+  }
+
+  potLog.push(e);
+  potByEventId.set(entry.eventId, e);
+  if (entry.prevEventId) {
+    const bucket = potByPrevEventId.get(entry.prevEventId) ?? [];
+    bucket.push(e);
+    potByPrevEventId.set(entry.prevEventId, bucket);
+  }
 }
 
 // ---------- Tool: pot_generate ----------
@@ -81,9 +174,11 @@ export async function potGenerate(args: {
 
   // P3: Offline fallback — stratum 16 = unsynchronized (RFC 5905)
   let pot;
+  let isOfflineFallback = false;
   try {
     pot = await timeSynth.generateProofOfTime();
   } catch {
+    isOfflineFallback = true;
     const nowMs = BigInt(Date.now());
     pot = {
       timestamp: nowMs * 1_000_000n,
@@ -170,6 +265,25 @@ export async function potGenerate(args: {
     potByPrevEventId.set(args.prevEventId, bucket);
   }
 
+  // Redis persistence — fire-and-forget; in-memory remains authoritative on failure
+  if (args.eventId) {
+    redis.setex(
+      `dag:${args.eventId}`,
+      90 * 86400,
+      JSON.stringify({
+        eventId: args.eventId,
+        prevEventId: args.prevEventId ?? null,
+        potHash,
+        timestamp: pot.timestamp.toString(),
+        stratum: pot.stratum,
+        mode: currentMode,
+        createdAt: entry.createdAt,
+        chainId: args.chainId ?? null,
+        poolAddress: args.poolAddress ?? null,
+      })
+    ).catch(() => {});
+  }
+
   return serialize({
     potHash,
     eventId: args.eventId ?? null,
@@ -181,6 +295,7 @@ export async function potGenerate(args: {
     sources: pot.sources,
     nonce: pot.nonce,
     expiresAt: pot.expiresAt.toString(),
+    ...(isOfflineFallback && { mode: "local" }),
     ...(grgShards.length > 0 && { grgShards }),
     signature: {
       issuerPubKey: signature.issuerPubKey,
@@ -328,7 +443,23 @@ export async function potGraph(args: {
   const chainBroken =
     backwardChain.some((e) => e.eventId && evictedEventIds.has(e.eventId)) ||
     (cursor?.prevEventId != null && potByEventId.get(cursor.prevEventId) == null);
-  const brokenAt = chainBroken ? (backwardChain[0]?.eventId ?? null) : null;
+
+  // Distinguish server_restart gap from ring-buffer eviction:
+  // If the oldest reachable entry has a prevEventId that is unknown AND was never tracked
+  // in evictedEventIds, this gap was caused by a server restart (in-memory cleared).
+  const chainRoot = backwardChain.length > 0 ? backwardChain[0] : null;
+  const isServerRestart =
+    chainBroken &&
+    chainRoot !== null &&
+    chainRoot.prevEventId != null &&
+    !potByEventId.has(chainRoot.prevEventId) &&
+    !evictedEventIds.has(chainRoot.prevEventId);
+
+  const brokenAt = chainBroken
+    ? isServerRestart
+      ? "server_restart"
+      : (backwardChain[0]?.eventId ?? null)
+    : null;
 
   // P2: Compress entries by depth to limit response token size
   const compressedBackward = backwardChain.map((e, i) => compressEntry(e, i + 1));
@@ -481,8 +612,12 @@ export async function potCheckpoint(args: {
 
   const eventCount = entries.length;
 
-  // Compress entries with depth-aware rollup (same compressEntry logic)
-  const compressed = entries.map((e, i) => compressEntry(e, i + 1));
+  // P2: Compress entries with depth-aware rollup.
+  // When maxTokens is provided, derive compression thresholds from charCount÷4 budget.
+  const depthThreshold = args.maxTokens
+    ? depthThresholdFromTokens(args.maxTokens, entries.length)
+    : undefined;
+  const compressed = entries.map((e, i) => compressEntry(e, i + 1, depthThreshold));
 
   // chainIntact: none of the selected entries were evicted from the ring buffer
   const chainIntact = !entries.some((e) => e.eventId && evictedEventIds.has(e.eventId));

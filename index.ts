@@ -7,8 +7,85 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createServer } from "http";
 import { z } from "zod";
-import { potGenerate, potVerify, potQuery, potGraph, potStats, potHealth, potCheckpoint } from "./tools";
+import { potGenerate, potVerify, potQuery, potGraph, potStats, potHealth, potCheckpoint, restoreDagEntry, redis } from "./tools";
 import { checkRateLimit, resolveApiKey, FREE_TIER_LIMIT } from "./auth";
+
+// ---------- DAG Recovery from Redis on server restart ----------
+
+interface PersistedDagEntry {
+  eventId: string;
+  prevEventId: string | null;
+  potHash: string;
+  timestamp: string;
+  stratum: number;
+  mode: string;
+  createdAt: number;
+  chainId: number | null;
+  poolAddress: string | null;
+}
+
+async function restoreDAGFromRedis(): Promise<number> {
+  try {
+    // Connect with a short timeout — Redis is optional
+    await Promise.race([
+      redis.connect(),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 3000)),
+    ]);
+  } catch {
+    return 0; // Redis unavailable — proceed with empty in-memory DAG
+  }
+
+  let cursor = "0";
+  let restored = 0;
+  const entries: PersistedDagEntry[] = [];
+
+  try {
+    do {
+      const [next, keys] = await redis.scan(cursor, "MATCH", "dag:*", "COUNT", "200");
+      cursor = next;
+      if (keys.length === 0) continue;
+      const values = await redis.mget(...keys);
+      for (const v of values) {
+        if (!v) continue;
+        try {
+          const entry = JSON.parse(v) as PersistedDagEntry;
+          if (entry.eventId) entries.push(entry);
+        } catch {
+          // malformed entry — skip
+        }
+      }
+    } while (cursor !== "0");
+  } catch {
+    return 0; // scan failed — treat as empty
+  }
+
+  // Sort by createdAt ascending so prevEventId references are inserted before their children
+  entries.sort((a, b) => a.createdAt - b.createdAt);
+
+  for (const e of entries) {
+    try {
+      restoreDagEntry({
+        eventId: e.eventId,
+        prevEventId: e.prevEventId,
+        potHash: e.potHash,
+        timestamp: e.timestamp,
+        stratum: e.stratum,
+        mode: e.mode,
+        createdAt: e.createdAt,
+        chainId: e.chainId,
+        poolAddress: e.poolAddress,
+      });
+      restored++;
+    } catch {
+      // skip invalid entry
+    }
+  }
+
+  if (restored > 0) {
+    console.error(`[ttt-mcp] DAG restored from Redis: ${restored} entries`);
+  }
+  return restored;
+}
 
 // ---------- Helper: build a fresh McpServer per HTTP request ----------
 // In stateless mode, StreamableHTTPServerTransport cannot be reused across
@@ -147,6 +224,9 @@ function buildMcpServer(): McpServer {
 // ---------- Start Server ----------
 
 async function main() {
+  // Restore DAG from Redis before accepting any requests (fire-and-forget on failure)
+  await restoreDAGFromRedis();
+
   const port = process.env.PORT ? parseInt(process.env.PORT, 10) : null;
 
   if (port) {
