@@ -40,20 +40,60 @@ Claude workflow → [context compressed] → agents call pot_query(eventId)
 
 ## Quick Start
 
+### Claude Code
+
 ```bash
-# Claude Desktop
+claude mcp add ttt -- npx -y @helm-protocol/ttt-mcp
+```
+
+With API key (unlimited calls):
+```bash
+claude mcp add ttt -e TTT_API_KEY=your-key -- npx -y @helm-protocol/ttt-mcp
+```
+
+### Claude Desktop
+
+Add to `claude_desktop_config.json`:
+
 ```json
 {
   "mcpServers": {
     "ttt": {
       "command": "npx",
-      "args": ["-y", "@helm-protocol/ttt-mcp"]
+      "args": ["-y", "@helm-protocol/ttt-mcp"],
+      "env": { "TTT_API_KEY": "your-key" }
     }
   }
 }
 ```
 
-Add `TTT_API_KEY` for unlimited calls (free tier: 100 calls/day per IP).
+Free tier: 100 calls/day per IP — no signup needed.
+
+---
+
+## 5-Minute Test
+
+Once connected, run this sequence in Claude:
+
+**Step 1 — Stamp a workflow step:**
+```
+pot_generate(eventId: "my-first-step")
+```
+
+**Step 2 — Simulate context compression:** start a new Claude session
+
+**Step 3 — Recover in the new session:**
+```
+pot_query(eventId: "my-first-step")
+```
+→ Returns exact record. Amnesia gone.
+
+**Step 4 — Build a causal chain:**
+```
+pot_generate(eventId: "step-2", prevEventId: "my-first-step")
+pot_graph(eventId: "step-2", depth: 5)
+```
+→ Full backward chain. Cryptographically ordered.
 
 ---
 
