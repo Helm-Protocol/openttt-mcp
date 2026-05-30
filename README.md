@@ -76,6 +76,12 @@ Free tier: 100 calls/day per IP — no signup needed.
 Once connected, run this sequence in Claude:
 
 **Step 1 — Stamp a workflow step:**
+
+Just tell Claude naturally:
+> "Stamp this step as my-first-step"
+> "Record what I just did as refactor-auth-step1"
+
+Claude calls `pot_generate` automatically. Or call it directly:
 ```
 pot_generate(eventId: "my-first-step")
 ```
@@ -83,6 +89,12 @@ pot_generate(eventId: "my-first-step")
 **Step 2 — Simulate context compression:** start a new Claude session
 
 **Step 3 — Recover in the new session:**
+
+Tell Claude:
+> "What did I do in my-first-step?"
+> "Recover my last workflow state"
+
+Or call directly:
 ```
 pot_query(eventId: "my-first-step")
 ```
