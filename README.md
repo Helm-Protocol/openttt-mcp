@@ -330,6 +330,25 @@ const audit = await client.callTool({
 
 ---
 
+## How It Differs — A Different Job, Not "Better"
+
+| Tool | Integration | What it recalls | Integrity | Hot-path cost |
+|------|-------------|-----------------|-----------|---------------|
+| Letta (MemGPT) | owns the agent loop | self-editing semantic memory | none | embedding + vector search per memory op |
+| LangGraph / LangMem | LangGraph only | graph state / semantic | none | checkpoint I/O (+ embeddings) |
+| RAG / vector DB | bolt-on | fuzzy similarity | none | embed + vector search per item |
+| **ttt-mcp** | **2-min MCP retrofit** | **exact causal step (by eventId)** | **Ed25519 + TTTPS timestamp** | **sign + hash + write — 0 embedding calls** |
+
+**The cost difference is structural, not incidental.**
+
+Letta and Mem0 treat agent memory as a semantic search problem — every recall forces an LLM embedding call and a vector search. ttt-mcp bypasses the LLM/embedding layer entirely: state recovery is an O(1) cryptographic hash lookup. Marginal cost is commodity CPU + storage, not API tokens.
+
+**Scope**: agents stamp the steps worth checkpointing — not every token, not every query. Volume tracks decisions, not total chat traffic.
+
+If you need fuzzy semantic search over past conversations, use Letta or a vector DB. If you need a zero-embedding, deterministic state recovery layer for long-horizon workflows that survives context compaction, use ttt-mcp.
+
+---
+
 ## Pricing
 
 | Tier | Price | Calls/month |
