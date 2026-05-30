@@ -43,12 +43,12 @@ Claude workflow → [context compressed] → agents call pot_query(eventId)
 ### Claude Code
 
 ```bash
-claude mcp add ttt -- npx -y @helm-protocol/ttt-mcp
+claude mcp add ttt -- npx -y @helm-protocol/ttt-mcp@0.3.0
 ```
 
 With API key (unlimited calls):
 ```bash
-claude mcp add ttt -e TTT_API_KEY=your-key -- npx -y @helm-protocol/ttt-mcp
+claude mcp add ttt -e TTT_API_KEY=your-key -- npx -y @helm-protocol/ttt-mcp@0.3.0
 ```
 
 ### Claude Desktop
