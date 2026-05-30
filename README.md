@@ -133,6 +133,8 @@ Stamp a workflow step with a cryptographic timestamp. For Claude Code: use `even
 |-----------|------|----------|-------------|
 | eventId | string | Either/or | Workflow step identifier. E.g. `"refactor_auth_step1"` |
 | prevEventId | string | No | Previous step's eventId — links steps into a causal chain |
+| description | string | No | Human-readable label stored with the record. Shorthand for `metadata.description` — both accepted |
+| metadata | object | No | Key-value pairs stored alongside the record. E.g. `{"description": "auth refactor", "tag": "prod"}` |
 | txHash | string | Either/or | Transaction hash (DeFi, hex with 0x prefix) |
 | chainId | number | No | EVM chain ID (DeFi) |
 | poolAddress | string | No | DEX pool contract address (DeFi) |
