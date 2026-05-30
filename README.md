@@ -338,8 +338,8 @@ const audit = await client.callTool({
 | Dev | $29/mo | 100K |
 | Pro | $99/mo | 1M |
 | Team | $299/mo | 10M + $0.01/1K overage |
-| Enterprise | $999+/mo | Unlimited · SLA 99.9% |
-| Platform License | Negotiated ($2M+/yr) | Unlimited · native integration |
+| Enterprise | $999+/mo | 100M calls/mo · $0.001/1K overage · SLA 99.9% |
+| Platform License | Negotiated ($2M+/yr) | Volume cap negotiated · native integration |
 
 **Subscribe instantly:**
 
