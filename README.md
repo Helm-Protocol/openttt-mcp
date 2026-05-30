@@ -362,9 +362,9 @@ If you need fuzzy semantic search over past conversations, use Letta or a vector
 
 **Subscribe instantly:**
 
-[![Dev $29/mo](https://img.shields.io/badge/Dev-$29%2Fmo-1a1a1a?style=flat)](https://buy.paddle.com/product/pri_01kswrh5mb6pmp0fxdsnkaxxg7)
-[![Pro $99/mo](https://img.shields.io/badge/Pro-$99%2Fmo-1a1a1a?style=flat)](https://buy.paddle.com/product/pri_01kswrh5svjsjcw01reh3sa0hh)
-[![Team $299/mo](https://img.shields.io/badge/Team-$299%2Fmo-1a1a1a?style=flat)](https://buy.paddle.com/product/pri_01kswrh5zvjbp4xsw59tb5wq3f)
+[![Dev $29/mo](https://img.shields.io/badge/Dev-$29%2Fmo-1a1a1a?style=flat)](https://kenosian.com/pricing.html)
+[![Pro $99/mo](https://img.shields.io/badge/Pro-$99%2Fmo-1a1a1a?style=flat)](https://kenosian.com/pricing.html)
+[![Team $299/mo](https://img.shields.io/badge/Team-$299%2Fmo-1a1a1a?style=flat)](https://kenosian.com/pricing.html)
 
 Enterprise & Platform License: [peter@kenosian.com](mailto:peter@kenosian.com) · Full pricing: [kenosian.com/pricing](https://kenosian.com/pricing.html)
 
