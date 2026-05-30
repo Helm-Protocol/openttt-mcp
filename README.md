@@ -348,6 +348,17 @@ Contact: peter@kenosian.com
 
 ---
 
+## Production Tips
+
+**Cold Start warm-up** — On first startup, BatchSigner requires one request to initialize. Call `pot_health` or send a single dummy `pot_generate` before your load balancer health check goes live. Without this, the first request may see p99 ~500ms; subsequent requests stabilize to <10ms.
+
+```bash
+# Kubernetes / Docker: add to your startup script
+curl -s http://your-server/pot/health > /dev/null
+```
+
+---
+
 ## Learn More
 
 - [OpenTTT SDK](https://www.npmjs.com/package/openttt) — The underlying SDK
