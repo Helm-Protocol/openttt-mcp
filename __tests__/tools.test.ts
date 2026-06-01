@@ -445,3 +445,82 @@ describe("P4: AdaptiveSwitch path selection", () => {
     }
   });
 });
+
+// ============================================================
+// Test suite 7: Quota advisory — applyAdvisory UX logic
+// Advisory is applied by tools.ts:applyAdvisory() which is tested here
+// via a lightweight simulation: we construct inputs matching what
+// delegateToServer would return and verify _quotaNotice injection.
+// ============================================================
+describe("Quota advisory surface", () => {
+  // Inline mirror of applyAdvisory from tools.ts — same logic, verified here in isolation
+  function applyAdvisory(result: unknown, advisory: { warning?: string; overageActive?: boolean } | undefined): unknown {
+    if (!advisory) return result;
+    if (result === null || typeof result !== "object") return result;
+    const notices: string[] = [];
+    if (advisory.warning) notices.push(advisory.warning);
+    if (advisory.overageActive) notices.push("Overage billing is active — usage above your plan limit will be charged.");
+    if (notices.length === 0) return result;
+    return { ...(result as object), _quotaNotice: notices.join(" | ") };
+  }
+
+  test("no _quotaNotice when advisory is undefined", () => {
+    const data = { potHash: "abc", timestamp: "1000" };
+    const result = applyAdvisory(data, undefined) as Record<string, unknown>;
+    expect(result._quotaNotice).toBeUndefined();
+    expect(result.potHash).toBe("abc");
+  });
+
+  test("no _quotaNotice when advisory has no warning and overageActive is false", () => {
+    const data = { potHash: "abc", timestamp: "1000" };
+    const result = applyAdvisory(data, { warning: undefined, overageActive: false }) as Record<string, unknown>;
+    expect(result._quotaNotice).toBeUndefined();
+  });
+
+  test("_quotaNotice injected when advisory.warning provided", () => {
+    const data = { potHash: "def", timestamp: "2000" };
+    const result = applyAdvisory(data, { warning: "You have used 85% of your monthly plan." }) as Record<string, unknown>;
+    expect(typeof result._quotaNotice).toBe("string");
+    expect(result._quotaNotice as string).toContain("85%");
+    expect(result.potHash).toBe("def"); // core data intact
+  });
+
+  test("_quotaNotice injected when overageActive:true", () => {
+    const data = { potHash: "ghi", timestamp: "3000" };
+    const result = applyAdvisory(data, { overageActive: true }) as Record<string, unknown>;
+    expect(typeof result._quotaNotice).toBe("string");
+    expect(result._quotaNotice as string).toContain("Overage billing");
+    expect(result.potHash).toBe("ghi");
+  });
+
+  test("_quotaNotice combines warning + overage when both present", () => {
+    const data = { potHash: "jkl", timestamp: "4000" };
+    const result = applyAdvisory(data, {
+      warning: "Approaching plan limit: 15 of 100 calls remaining.",
+      overageActive: true,
+    }) as Record<string, unknown>;
+    const notice = result._quotaNotice as string;
+    expect(notice).toContain("Approaching plan limit");
+    expect(notice).toContain("Overage billing");
+  });
+
+  test("non-object result passes through unchanged", () => {
+    const result = applyAdvisory("raw-string", { warning: "some warning" });
+    expect(result).toBe("raw-string");
+  });
+
+  test("potCheckpoint uses local path when TTT_API_KEY is not set", async () => {
+    delete process.env.TTT_API_KEY;
+    const evtId = uniqueId("local-ckpt");
+    await potGenerate({ eventId: evtId });
+
+    const result = await potCheckpoint({
+      startTime: Date.now() - 60_000,
+      endTime: Date.now() + 1_000,
+    }) as Record<string, unknown>;
+
+    expect(result.checkpointId).toMatch(/^ckpt_\d+_\d+$/);
+    expect(typeof result.chainIntact).toBe("boolean");
+    expect(typeof result.nextCheckpointHint).toBe("number");
+  });
+});

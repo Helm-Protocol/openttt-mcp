@@ -9,7 +9,32 @@ const GrgPipeline: { processForward: (data: Uint8Array, chainId: number, poolAdd
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   (require("openttt") as Record<string, unknown>).GrgPipeline as typeof GrgPipeline ?? null;
 import { telemetryIncrement } from "./telemetry";
+import { delegateToServer, QuotaExceededError, type QuotaAdvisory } from "./server";
+
+// ---------- Quota advisory helpers ----------
+// Non-destructive: appends advisory notice to a result object without altering core fields.
+
+function applyAdvisory(result: unknown, advisory: QuotaAdvisory | undefined): unknown {
+  if (!advisory) return result;
+  if (result === null || typeof result !== "object") return result;
+
+  const notices: string[] = [];
+  if (advisory.warning) notices.push(advisory.warning);
+  if (advisory.overageActive) notices.push("Overage billing is active — usage above your plan limit will be charged.");
+  if (notices.length === 0) return result;
+
+  return { ...(result as object), _quotaNotice: notices.join(" | ") };
+}
 import Redis from "ioredis";
+
+// ---------- Server delegation gate ----------
+// When an API key is configured, PoT processing is delegated to openttt-server
+// so that plan-based monthly quotas are enforced server-side (HTTP 429 on
+// exhaustion). Without an API key, processing stays local (free tier, counted
+// per day in index.ts / auth.ts).
+function resolvePaidApiKey(): string | undefined {
+  return process.env.TTT_API_KEY?.trim() || undefined;
+}
 
 // ---------- Redis (optional persistence) ----------
 
@@ -177,6 +202,20 @@ export async function potGenerate(args: {
     throw new Error("Either eventId (Claude Code) or txHash (DeFi) is required");
   }
   telemetryIncrement("pot_generate");
+
+  // Paid path: delegate to openttt-server (server enforces plan quota → 429).
+  // Server-side pot_generate keys on eventId; for DeFi-only calls (txHash with
+  // no eventId) we keep the local path since the server has no DeFi shard route.
+  const apiKey = resolvePaidApiKey();
+  if (apiKey && args.eventId) {
+    const { data, advisory } = await delegateToServer({
+      apiKey,
+      method: "POST",
+      path: "/pot/generate",
+      body: { eventId: args.eventId, prevEventId: args.prevEventId },
+    });
+    return applyAdvisory(data, advisory);
+  }
 
   // P3: Offline fallback — stratum 16 = unsynchronized (RFC 5905)
   let pot;
@@ -353,6 +392,23 @@ export async function potQuery(args: {
 }): Promise<unknown> {
   telemetryIncrement("pot_query");
 
+  // Paid path: delegate to openttt-server (authoritative, server-side quota).
+  const apiKey = resolvePaidApiKey();
+  if (apiKey) {
+    const { data, advisory } = await delegateToServer({
+      apiKey,
+      method: "GET",
+      path: "/pot/query",
+      query: {
+        eventId: args.eventId,
+        startTimeNs: args.startTime != null ? args.startTime * 1_000_000 : undefined,
+        endTimeNs: args.endTime != null ? args.endTime * 1_000_000 : undefined,
+        limit: args.limit,
+      },
+    });
+    return applyAdvisory(data, advisory);
+  }
+
   // Direct eventId lookup — O(1), exact identity match (SHA-3 collision prob = 2^-256)
   if (args.eventId) {
     const entry = potByEventId.get(args.eventId);
@@ -426,6 +482,18 @@ export async function potGraph(args: {
 }): Promise<unknown> {
   telemetryIncrement("pot_graph");
 
+  // Paid path: delegate to openttt-server (authoritative, server-side quota).
+  const apiKey = resolvePaidApiKey();
+  if (apiKey) {
+    const { data, advisory } = await delegateToServer({
+      apiKey,
+      method: "GET",
+      path: "/pot/graph",
+      query: { eventId: args.eventId, depth: args.depth },
+    });
+    return applyAdvisory(data, advisory);
+  }
+
   const maxDepth = Math.min(args.depth ?? 10, 100);
 
   // Traverse backward chain (prevEventId links) — O(depth)
@@ -487,6 +555,17 @@ export async function potStats(args: {
   period: "day" | "week" | "month";
 }): Promise<unknown> {
   telemetryIncrement("pot_stats");
+
+  // Paid path: delegate to openttt-server (authoritative, server-side quota).
+  const apiKey = resolvePaidApiKey();
+  if (apiKey) {
+    const { data, advisory } = await delegateToServer({
+      apiKey,
+      method: "GET",
+      path: "/pot/stats",
+    });
+    return applyAdvisory(data, advisory);
+  }
 
   const now = Date.now();
   const periodMs: Record<string, number> = {
@@ -590,6 +669,26 @@ export async function potCheckpoint(args: {
 }): Promise<unknown> {
   telemetryIncrement("pot_checkpoint");
 
+  // Paid path: delegate to openttt-server.
+  // Checkpoint must reflect the server's authoritative DAG to stay consistent
+  // with server-side quota accounting (event counts may differ locally vs. server).
+  const apiKey = resolvePaidApiKey();
+  if (apiKey) {
+    const { data, advisory } = await delegateToServer({
+      apiKey,
+      method: "GET",
+      path: "/pot/checkpoint",
+      query: {
+        fromEventId: args.fromEventId,
+        toEventId: args.toEventId,
+        startTime: args.startTime,
+        endTime: args.endTime,
+        maxTokens: args.maxTokens,
+      },
+    });
+    return applyAdvisory(data, advisory);
+  }
+
   const now = Date.now();
   const startTime = args.startTime ?? now - 3_600_000;
   const endTime = args.endTime ?? now;
@@ -627,7 +726,7 @@ export async function potCheckpoint(args: {
   // chainIntact: none of the selected entries were evicted from the ring buffer
   const chainIntact = !entries.some((e) => e.eventId && evictedEventIds.has(e.eventId));
 
-  // nextCheckpointHint: recommend calling checkpoint every 240 events (E8 kissing number)
+  // nextCheckpointHint: recommended checkpoint cadence = every 240 events
   // Returns how many more events can be generated before next recommended checkpoint
   const nextCheckpointHint = Math.max(10, 240 - (eventCount % 240));
 

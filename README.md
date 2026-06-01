@@ -33,7 +33,7 @@ Claude workflow → [context compressed] → agents call pot_query(eventId)
 | **Ordering** | TTTPS causal timestamps | Total order on events — tamper-proof sequence proof |
 | **Causal chain** | prevEventId DAG | O(depth) traversal — depth ~100 for 1B-token workflows |
 | **Non-repudiation** | Ed25519 signature | Cryptographic proof of who acted when |
-| **Resilience** | Golay cryptographic shards | ≥97% recovery at BER=0.05, 99.88% at BER=0.02 |
+| **Resilience** | Erasure-coded cryptographic shards | ≥97% recovery at BER=0.05, 99.88% at BER=0.02 (theoretical) |
 | **Persistence** | Redis AOF + 90-day TTL | Server survives context compression and restarts |
 
 ---
@@ -46,7 +46,7 @@ Claude workflow → [context compressed] → agents call pot_query(eventId)
 claude mcp add ttt -- npx -y @helm-protocol/ttt-mcp@0.3.0
 ```
 
-With API key (unlimited calls):
+With an API key (raises the free limit to your plan's monthly quota):
 ```bash
 claude mcp add ttt -e TTT_API_KEY=your-key -- npx -y @helm-protocol/ttt-mcp@0.3.0
 ```
@@ -60,12 +60,18 @@ Add to `claude_desktop_config.json`:
   "mcpServers": {
     "ttt": {
       "command": "npx",
-      "args": ["-y", "@helm-protocol/ttt-mcp"],
+      "args": ["-y", "@helm-protocol/ttt-mcp@0.3.0"],
       "env": { "TTT_API_KEY": "your-key" }
     }
   }
 }
 ```
+
+### Cursor
+
+[![Add to Cursor](https://img.shields.io/badge/Add%20to%20Cursor-1a1a1a?style=flat&logo=cursor&logoColor=white)](https://cursor.com/install-mcp?name=ttt&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBoZWxtLXByb3RvY29sL3R0dC1tY3BAMC4zLjAiXX0=)
+
+One-click install, or add the same `mcpServers` block above to `.cursor/mcp.json`.
 
 Free tier: 100 calls/day per IP — no signup needed.
 
@@ -133,8 +139,6 @@ Stamp a workflow step with a cryptographic timestamp. For Claude Code: use `even
 |-----------|------|----------|-------------|
 | eventId | string | Either/or | Workflow step identifier. E.g. `"refactor_auth_step1"` |
 | prevEventId | string | No | Previous step's eventId — links steps into a causal chain |
-| description | string | No | Human-readable label stored with the record. Shorthand for `metadata.description` — both accepted |
-| metadata | object | No | Key-value pairs stored alongside the record. E.g. `{"description": "auth refactor", "tag": "prod"}` |
 | txHash | string | Either/or | Transaction hash (DeFi, hex with 0x prefix) |
 | chainId | number | No | EVM chain ID (DeFi) |
 | poolAddress | string | No | DEX pool contract address (DeFi) |
@@ -158,6 +162,19 @@ Traverse the causal chain from any step. Returns backward chain (ancestors) and 
 |-----------|------|----------|-------------|
 | eventId | string | Yes | Step to traverse from |
 | depth | number | No | Max backward depth. Default: 10, max: 100 |
+
+**Returns:**
+- `backwardChain` — ancestors in chronological order (depth-compressed for large chains)
+- `forwardChain` — steps that follow the given eventId
+- `chainBroken` — `true` if a gap is detected (ancestor was evicted from ring buffer, or the chain root references an unknown entry)
+- `brokenAt` — `"server_restart"` if the gap was caused by a server restart clearing in-memory state; otherwise the eventId at which the break occurred; `null` if chain is intact
+- `reachableDepth` — number of ancestors successfully traversed before the gap (or chain root)
+
+**Causal chain gap causes:**
+- **`server_restart`**: the server restarted and the in-memory DAG was cleared. If Redis is available and `REDIS_URL` is set, the DAG is rebuilt from Redis on startup — reducing restart gaps.
+- **Ring-buffer eviction**: the ring buffer holds the most recent 10,000 events in memory. Ancestors beyond that window show as `chainBroken: true` with `brokenAt` set to the oldest reachable eventId.
+
+**Recovering from a gap**: call `pot_checkpoint` before long tasks to compress and preserve the chain within the token budget, or use Redis persistence to survive restarts.
 
 ### pot_verify
 
@@ -194,7 +211,8 @@ Creates a compressed rollup checkpoint of workflow history.
 
 **Returns:**
 - `checkpointId` — unique checkpoint identifier
-- `rollupSummary` — compressed event history (depth-adaptive: full/compact/minimal/rollup)
+- `rollup` — compressed event history (depth-adaptive: full/compact/minimal/rollup)
+- `summary` — human-readable one-line summary of the checkpoint
 - `chainIntact` — whether the causal chain is unbroken
 - `nextCheckpointHint` — recommended events before next checkpoint
 
@@ -243,6 +261,19 @@ const chain = await client.callTool({
 });
 // chain.backwardChain — all ancestor steps in chronological order
 // chain.forwardChain — steps that follow this one
+// chain.chainBroken — true if a gap was detected in the ancestor chain
+// chain.brokenAt    — "server_restart" if the server restarted and cleared
+//                     the in-memory DAG; otherwise the eventId of the oldest
+//                     reachable ancestor before the gap; null if chain intact
+// chain.reachableDepth — how many ancestors were recovered before the gap
+
+// Handle a server-restart gap:
+if (chain.chainBroken && chain.brokenAt === "server_restart") {
+  // Server cleared in-memory state; ancestors before the gap are gone unless
+  // Redis was configured (REDIS_URL) — in that case the DAG was rebuilt on
+  // restart and chainBroken will be false.
+  // Recover by querying the most recent checkpoint or restarting from a known step.
+}
 ```
 
 **Before a long task or every ~100 events — create a checkpoint:**
@@ -257,7 +288,7 @@ const checkpoint = await client.callTool({
   }
 });
 // checkpoint.checkpointId — store this; resume from it after compression
-// checkpoint.rollupSummary — depth-adaptive compressed history (10–200 tokens/event)
+// checkpoint.rollup — depth-adaptive compressed history (10–200 tokens/event)
 // checkpoint.chainIntact: true — causal chain verified unbroken
 // checkpoint.nextCheckpointHint: 87 — suggested events before next checkpoint
 
@@ -286,7 +317,7 @@ const history = await client.callTool({
 
 **Problem**: You got front-run. You can't prove it — mempool timestamps are per-node, unsigned, non-authoritative.
 
-**Solution**: Call `pot_generate` before every submission. The PoT receipt is cryptographically signed by three independent time sources (NIST, Google, Cloudflare), anchored on Base Sepolia TTT ERC-1155. If front-running occurs, you have a timestamped, on-chain record predating the attacker's block inclusion.
+**Solution**: Call `pot_generate` before every submission. The PoT receipt is cryptographically signed using three independent time sources (NIST, Google, Cloudflare). The on-chain hash can be anchored via a separate Base Sepolia TTT ERC-1155 contract. If front-running occurs, you have a timestamped record predating the attacker's block inclusion.
 
 ```typescript
 const pot = await client.callTool({
@@ -296,11 +327,15 @@ const pot = await client.callTool({
 // pot.potHash — your evidence, timestamped by NIST+Google+Cloudflare
 ```
 
+> **Note:** The DeFi path (`txHash` + `chainId` + `poolAddress`) requires a server-side build with the integrity-shard pipeline enabled. It is not available in the public `openttt` npm package; calls without it will throw. The Claude Code path (`eventId`) works out of the box.
+
 ---
 
 ### 3. DEX Protocol — Sandwich Deterrence
 
 **Solution**: Integrate `TTTHookSimple` (Uniswap V4 hook, Base Sepolia: `0x8C633b05b833a476925F7d9818da6E215760F2c7`). Honest builders get `turbo` mode. Tampered sequences get `full` mode (penalty delay). Economics, not governance.
+
+> **Note:** Shard-based verification (`pot_verify` with `grgShards`) requires a server-side build with the integrity-shard pipeline enabled — not available in the public `openttt` npm package.
 
 ---
 
@@ -308,19 +343,21 @@ const pot = await client.callTool({
 
 **Problem**: MiFIR Article 22c / RTS 25 requires microsecond-precision UTC-synchronized timestamps. Hardware PTP appliances cost $50K–$500K.
 
-**Solution**: `pot_generate` produces an Ed25519-signed timestamp with uncertainty bound and multi-source attestation. Structurally compatible with RTS 25 audit record requirements. One API call per trade.
+**Solution**: `pot_generate` produces an Ed25519-signed timestamp with an uncertainty bound and multi-source attestation. Structurally compatible with the RTS 25 audit record format. One API call per trade.
 
 ```typescript
 const audit = await client.callTool({
   name: "pot_generate",
   arguments: { txHash: tradeHash, chainId: 8453 }
 });
-// audit.timestamp: nanosecond precision
-// audit.uncertainty: ±ms bound (RTS 25 required field)
+// audit.timestamp: high-resolution timestamp
+// audit.uncertainty: ± bound (RTS 25 uncertainty field)
 // audit.confidence: fraction of sources that agreed
 ```
 
-**Outcome**: MiFIR-grade audit trail. IETF standardized via `draft-helmprotocol-tttps-00`.
+> **Precision note:** The default network time sources (Roughtime / NTP) provide a few-millisecond uncertainty bound. The MiFIR Art. 22c / RTS 25 ±1ms (and tighter) requirement is met only with an added GEO time source (KTSat); this is a roadmap configuration, not the default deployment.
+
+**Outcome**: Structurally compatible audit trail. IETF specification: `draft-helmprotocol-tttps-00`.
 
 ---
 
@@ -362,15 +399,18 @@ If you need fuzzy semantic search over past conversations, use Letta or a vector
 | Enterprise | $999+/mo | 100M calls/mo · $0.001/1K overage · SLA 99.9% |
 | Platform License | Negotiated ($2M+/yr) | Volume cap negotiated · native integration |
 
-**Subscribe instantly:**
+**Subscribe:**
 
-[![Dev $29/mo](https://img.shields.io/badge/Dev-$29%2Fmo-1a1a1a?style=flat)](https://kenosian.com/pricing.html)
-[![Pro $99/mo](https://img.shields.io/badge/Pro-$99%2Fmo-1a1a1a?style=flat)](https://kenosian.com/pricing.html)
-[![Team $299/mo](https://img.shields.io/badge/Team-$299%2Fmo-1a1a1a?style=flat)](https://kenosian.com/pricing.html)
+Dev **$29/mo** · Pro **$99/mo** · Team **$299/mo** — to subscribe, email [peter@kenosian.com](mailto:peter@kenosian.com).
 
-Enterprise & Platform License: [peter@kenosian.com](mailto:peter@kenosian.com) · Full pricing: [kenosian.com/pricing](https://kenosian.com/pricing.html)
+Enterprise & Platform License: [peter@kenosian.com](mailto:peter@kenosian.com)
 
 Contact: peter@kenosian.com
+
+**Quota mechanics — stdio vs HTTP:**
+
+- **HTTP mode** (Glama / Smithery container, `PORT` set): the per-IP free tier limit (100 calls/day) is enforced locally in the server process.
+- **stdio mode** (Claude Code `npx`, Claude Desktop): there is no per-IP counter. Tool calls are delegated to `api.kenosian.com` via `X-TTT-API-Key`; quota is enforced server-side against your plan's monthly allowance. Without `TTT_API_KEY` the local fallback runs with no daily cap, but plan features (server-side DAG persistence, multi-session causal chains) are unavailable.
 
 ---
 
@@ -378,6 +418,20 @@ Contact: peter@kenosian.com
 
 - Node.js >= 18
 - Network access for time synthesis (HTTPS to time.nist.gov, time.google.com, time.cloudflare.com)
+
+**Time source tiers (automatic fallback):**
+
+| Tier | Source | Stratum | Notes |
+|------|--------|---------|-------|
+| 1 (preferred) | PTP / hardware clock | 0–1 | Requires local PTP daemon |
+| 2 | Roughtime / NTP (NIST, Google, Cloudflare) | 2–4 | Default for most deployments |
+| 3 (offline fallback) | Local system clock | 16 | RFC 5905 unsynchronized stratum — used when all network sources are unreachable |
+
+The server falls through to stratum 16 automatically; no manual configuration needed. The `stratum` field in every `pot_generate` response indicates which tier was used.
+
+**Redis persistence (optional):**
+
+Redis is not required. The in-memory DAG is authoritative at runtime. If `REDIS_URL` is set, events are written to Redis with a 90-day TTL and the DAG is rebuilt from Redis on server restart — reducing `server_restart` chain gaps. Without Redis, the in-memory DAG is cleared on restart.
 
 ---
 

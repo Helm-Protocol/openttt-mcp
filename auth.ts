@@ -1,6 +1,8 @@
 // @helm-protocol/ttt-mcp — Free tier rate limit structure
 // FREE_TIER_LIMIT calls/day per IP (default: 100)
-// API key present → unlimited (key validation deferred to server)
+// API key present → tier "paid", BUT NOT unlimited locally. Quota is enforced
+// authoritatively by openttt-server (plan-based monthly quota via the
+// X-TTT-API-Key header). The client must NOT grant a local unlimited pass.
 
 import * as fs from "fs";
 import * as path from "path";
@@ -56,9 +58,13 @@ function writeUsageFile(entry: BucketEntry): void {
 export function checkRateLimit(
   apiKey: string | undefined,
   clientIp: string
-): { allowed: boolean; remaining: number; tier: "free" | "paid" } {
+): { allowed: boolean; remaining: number; tier: "free" | "paid"; serverDelegated?: boolean } {
+  // API key present: this client does NOT enforce or bypass quota locally.
+  // The request is delegated to openttt-server, which enforces the plan's
+  // monthly quota and returns HTTP 429 when exceeded. `remaining: -1` here
+  // means "not locally counted" — it is NOT an unlimited grant.
   if (apiKey && apiKey.trim().length > 0) {
-    return { allowed: true, remaining: -1, tier: "paid" };
+    return { allowed: true, remaining: -1, tier: "paid", serverDelegated: true };
   }
 
   const now = Date.now();

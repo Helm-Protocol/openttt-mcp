@@ -11,7 +11,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "esbuild index.ts tools.ts telemetry.ts auth.ts --platform=node --target=node18 --format=cjs --outdir=dist",
+    "build": "esbuild index.ts tools.ts telemetry.ts auth.ts server.ts --platform=node --target=node18 --format=cjs --outdir=dist",
     "start": "node dist/index.js",
     "dev": "npx ts-node index.ts",
     "test": "jest --forceExit",

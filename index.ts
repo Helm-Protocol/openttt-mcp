@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // @helm-protocol/ttt-mcp — MCP Server for OpenTTT Proof of Time
-// Provides 5 tools for AI agents: pot_generate, pot_verify, pot_query, pot_stats, pot_health
+// Provides 7 tools for AI agents: pot_generate, pot_verify, pot_query,
+// pot_graph, pot_stats, pot_health, pot_checkpoint
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -8,7 +9,8 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { createServer } from "http";
 import { z } from "zod";
 import { potGenerate, potVerify, potQuery, potGraph, potStats, potHealth, potCheckpoint, restoreDagEntry, redis } from "./tools";
-import { checkRateLimit, resolveApiKey, FREE_TIER_LIMIT } from "./auth";
+import { checkRateLimit, resolveApiKey } from "./auth";
+import { FREE_TIER_UPGRADE_MESSAGE, UPGRADE_URL, QuotaExceededError } from "./server";
 
 // ---------- DAG Recovery from Redis on server restart ----------
 
@@ -92,8 +94,53 @@ async function restoreDAGFromRedis(): Promise<number> {
 // requests (throws "Stateless transport cannot be reused...").
 // We therefore create a new McpServer + transport per POST request.
 
+// Format a tool error as MCP content. QuotaExceededError surfaces the upgrade
+// page so the user gets a natural, actionable message (no overstatement).
+function toolError(err: unknown): { content: { type: "text"; text: string }[]; isError: true } {
+  if (err instanceof QuotaExceededError) {
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: JSON.stringify(
+            { error: "quota_exceeded", tier: err.tier, message: err.message, upgradeUrl: err.upgradeUrl },
+            null,
+            2
+          ),
+        },
+      ],
+      isError: true,
+    };
+  }
+  return {
+    content: [{ type: "text" as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+    isError: true,
+  };
+}
+
+// Wrap a successful tool result as MCP content.
+// If the result carries a _quotaNotice field (injected by applyAdvisory in tools.ts),
+// it is surfaced as a separate advisory text block — normal result is always first.
+function toolSuccess(result: unknown): { content: { type: "text"; text: string }[] } {
+  if (result !== null && typeof result === "object") {
+    const r = result as Record<string, unknown>;
+    const notice = r._quotaNotice as string | undefined;
+    if (notice) {
+      // Emit result without _quotaNotice in the main block, advisory in a second block
+      const { _quotaNotice: _, ...rest } = r;
+      return {
+        content: [
+          { type: "text" as const, text: JSON.stringify(rest, null, 2) },
+          { type: "text" as const, text: `⚠ Quota notice: ${notice}` },
+        ],
+      };
+    }
+  }
+  return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+}
+
 function buildMcpServer(): McpServer {
-  const s = new McpServer({ name: "ttt-mcp", version: "0.1.0" });
+  const s = new McpServer({ name: "ttt-mcp", version: "0.3.0" });
 
   s.tool(
     "pot_generate",
@@ -108,9 +155,9 @@ function buildMcpServer(): McpServer {
     async (args) => {
       try {
         const result = await potGenerate(args);
-        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+        return toolSuccess(result);
       } catch (err: unknown) {
-        return { content: [{ type: "text" as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
+        return toolError(err);
       }
     }
   );
@@ -127,9 +174,9 @@ function buildMcpServer(): McpServer {
     async (args) => {
       try {
         const result = await potVerify(args);
-        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+        return toolSuccess(result);
       } catch (err: unknown) {
-        return { content: [{ type: "text" as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
+        return toolError(err);
       }
     }
   );
@@ -146,9 +193,9 @@ function buildMcpServer(): McpServer {
     async (args) => {
       try {
         const result = await potQuery(args);
-        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+        return toolSuccess(result);
       } catch (err: unknown) {
-        return { content: [{ type: "text" as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
+        return toolError(err);
       }
     }
   );
@@ -163,9 +210,9 @@ function buildMcpServer(): McpServer {
     async (args) => {
       try {
         const result = await potGraph(args);
-        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+        return toolSuccess(result);
       } catch (err: unknown) {
-        return { content: [{ type: "text" as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
+        return toolError(err);
       }
     }
   );
@@ -177,9 +224,9 @@ function buildMcpServer(): McpServer {
     async (args) => {
       try {
         const result = await potStats(args);
-        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+        return toolSuccess(result);
       } catch (err: unknown) {
-        return { content: [{ type: "text" as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
+        return toolError(err);
       }
     }
   );
@@ -191,9 +238,9 @@ function buildMcpServer(): McpServer {
     async () => {
       try {
         const result = await potHealth();
-        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+        return toolSuccess(result);
       } catch (err: unknown) {
-        return { content: [{ type: "text" as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
+        return toolError(err);
       }
     }
   );
@@ -211,9 +258,9 @@ function buildMcpServer(): McpServer {
     async (args) => {
       try {
         const result = await potCheckpoint(args);
-        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+        return toolSuccess(result);
       } catch (err: unknown) {
-        return { content: [{ type: "text" as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
+        return toolError(err);
       }
     }
   );
@@ -235,10 +282,11 @@ async function main() {
       // Health check for Docker/Glama container probes
       if (req.method === "GET" && (req.url === "/health" || req.url === "/ping")) {
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ status: "ok", server: "ttt-mcp", version: "0.2.0" }));
+        res.end(JSON.stringify({ status: "ok", server: "ttt-mcp", version: "0.3.0" }));
         return;
       }
-      // Rate limiting — free tier: 100 calls/day per IP, API key = unlimited
+      // Rate limiting — free tier: 100 calls/day per IP (HTTP mode only);
+      // API key (X-TTT-API-Key) is metered server-side by monthly plan quota — not a local unlimited pass
       if (req.method === "POST") {
         const apiKey = resolveApiKey(req.headers["x-api-key"] as string | undefined);
         const clientIp =
@@ -256,7 +304,8 @@ async function main() {
           res.end(
             JSON.stringify({
               error: "rate_limit_exceeded",
-              message: "Free tier: 100 calls/day reached. Contact heime.jorgen@proton.me for commercial access.",
+              message: FREE_TIER_UPGRADE_MESSAGE,
+              upgradeUrl: UPGRADE_URL,
               tier: "free",
             })
           );
