@@ -17,5 +17,21 @@
         "type": "stdio"
       }
     }
-  ]
+  ],
+  "_meta": {
+    "com.kenosian/integrity": {
+      "version": "1",
+      "assertion": "self-asserted",
+      "advisory": "Capability advertisement only. A capability tag asserts that this origin offers the named interface; it does not by itself prove legal identity, regulatory status, or any cryptographic guarantee. Verification is performed out-of-band against the published specification and issued attestations.",
+      "capabilityTags": [
+        "pre-ingestion-timestamp",
+        "forensic-audit-ledger",
+        "operator-independent-verification",
+        "audit-certification-authority"
+      ],
+      "spec": "https://datatracker.ietf.org/doc/draft-helmprotocol-tttps/",
+      "wellKnown": "https://kenosian.com/.well-known/tttps.json",
+      "contact": "peter@kenosian.com"
+    }
+  }
 }
