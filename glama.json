@@ -1,7 +1,7 @@
 {
   "$schema": "https://glama.ai/mcp/schemas/server.json",
   "maintainers": ["Heime-Jorgen"],
-  "description": "Prevents context amnesia in Claude Code Dynamic Workflows. Every workflow step anchored to an external cryptographic timestamp — survives context compression. O(1) SHA-3 eventId lookup (2⁻²⁵⁶ collision probability). Causal DAG via prevEventId chains. Also: MEV ordering proofs, MiFIR Art.22c audit-grade timestamps. IETF draft-helmprotocol-tttps-00.",
+  "description": "Prevents context amnesia in Claude Code Dynamic Workflows. Every workflow step anchored to an external cryptographic timestamp — survives context compression. O(1) SHA-3 eventId lookup (2⁻²⁵⁶ collision probability). Causal DAG via prevEventId chains. Also: MEV ordering proofs, MiFIR Art.22c audit-grade timestamps. IETF draft-helmprotocol-tttps.",
   "homepage": "https://github.com/Helm-Protocol/OpenTTT",
   "repository": "https://github.com/Helm-Protocol/openttt-mcp",
   "license": "BSL-1.1",

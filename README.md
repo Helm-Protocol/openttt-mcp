@@ -1,6 +1,6 @@
 # @helm-protocol/ttt-mcp
 
-> Reference implementation of [draft-helmprotocol-tttps-00](https://datatracker.ietf.org/doc/draft-helmprotocol-tttps/) (IETF Experimental)
+> Reference implementation of [draft-helmprotocol-tttps](https://datatracker.ietf.org/doc/draft-helmprotocol-tttps/) (IETF Experimental)
 
 **MCP Server for OpenTTT — Proof of Time tools for AI agents**
 
@@ -357,7 +357,7 @@ const audit = await client.callTool({
 
 > **Precision note:** The default network time sources (Roughtime / NTP) provide a few-millisecond uncertainty bound. The MiFIR Art. 22c / RTS 25 ±1ms (and tighter) requirement is met only with an added GEO time source (KTSat); this is a roadmap configuration, not the default deployment.
 
-**Outcome**: Structurally compatible audit trail. IETF specification: `draft-helmprotocol-tttps-00`.
+**Outcome**: Structurally compatible audit trail. IETF specification: `draft-helmprotocol-tttps`.
 
 ---
 
@@ -449,7 +449,7 @@ curl -s http://your-server/pot/health > /dev/null
 ## Learn More
 
 - [OpenTTT SDK](https://www.npmjs.com/package/openttt) — The underlying SDK
-- [IETF Draft: draft-helmprotocol-tttps-00](https://datatracker.ietf.org/doc/draft-helmprotocol-tttps/) — TTTPS Protocol Specification
+- [IETF Draft: draft-helmprotocol-tttps](https://datatracker.ietf.org/doc/draft-helmprotocol-tttps/) — TTTPS Protocol Specification
 - [Helm Protocol](https://github.com/Helm-Protocol) — GitHub
 
 ## License

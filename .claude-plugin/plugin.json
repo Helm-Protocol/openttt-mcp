@@ -1,7 +1,7 @@
 {
   "name": "openttt-pot",
   "displayName": "OpenTTT — Proof of Time",
-  "description": "Prevents context amnesia in Claude Code Dynamic Workflows. External cryptographic timestamps survive context compression — agents call pot_query(eventId) for O(1) exact step recall (2⁻²⁵⁶ collision probability). Causal DAG via prevEventId. pot_graph traverses full workflow timeline. Also: MEV ordering proofs, MiFIR Art.22c audit-grade timestamps. IETF draft-helmprotocol-tttps-00.",
+  "description": "Prevents context amnesia in Claude Code Dynamic Workflows. External cryptographic timestamps survive context compression — agents call pot_query(eventId) for O(1) exact step recall (2⁻²⁵⁶ collision probability). Causal DAG via prevEventId. pot_graph traverses full workflow timeline. Also: MEV ordering proofs, MiFIR Art.22c audit-grade timestamps. IETF draft-helmprotocol-tttps.",
   "version": "0.2.2",
   "stage": "production",
   "author": {
