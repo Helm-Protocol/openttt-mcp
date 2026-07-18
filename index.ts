@@ -8,7 +8,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createServer } from "http";
 import { z } from "zod";
-import { potGenerate, potVerify, potQuery, potGraph, potStats, potHealth, potCheckpoint, restoreDagEntry, redis } from "./tools";
+import { potGenerate, potVerify, potQuery, potGraph, potStats, potHealth, potCheckpoint, restoreDagEntry, redis, tttsFreshnessSeal } from "./tools";
 import { checkRateLimit, resolveApiKey } from "./auth";
 import { FREE_TIER_UPGRADE_MESSAGE, UPGRADE_URL, QuotaExceededError } from "./server";
 
@@ -121,30 +121,32 @@ function toolError(err: unknown): { content: { type: "text"; text: string }[]; i
 // Wrap a successful tool result as MCP content.
 // If the result carries a _quotaNotice field (injected by applyAdvisory in tools.ts),
 // it is surfaced as a separate advisory text block — normal result is always first.
+// TTT Seal Layer (v0.3.1): appends _tttps_freshness to every object response.
 function toolSuccess(result: unknown): { content: { type: "text"; text: string }[] } {
-  if (result !== null && typeof result === "object") {
+  const seal = tttsFreshnessSeal();
+  if (seal && result !== null && typeof result === "object") {
     const r = result as Record<string, unknown>;
     const notice = r._quotaNotice as string | undefined;
     if (notice) {
-      // Emit result without _quotaNotice in the main block, advisory in a second block
       const { _quotaNotice: _, ...rest } = r;
       return {
         content: [
-          { type: "text" as const, text: JSON.stringify(rest, null, 2) },
+          { type: "text" as const, text: JSON.stringify({ ...rest, _tttps_freshness: seal }, null, 2) },
           { type: "text" as const, text: `⚠ Quota notice: ${notice}` },
         ],
       };
     }
+    return { content: [{ type: "text" as const, text: JSON.stringify({ ...(result as object), _tttps_freshness: seal }, null, 2) }] };
   }
   return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
 }
 
 function buildMcpServer(): McpServer {
-  const s = new McpServer({ name: "ttt-mcp", version: "0.3.0" });
+  const s = new McpServer({ name: "ttt-mcp", version: "0.3.1" });
 
   s.tool(
     "pot_generate",
-    "Generate a cryptographic Proof of Time timestamp. For Claude Code workflows: use eventId + prevEventId to build a causal chain. For DeFi: use txHash + chainId + poolAddress. Either eventId or txHash is required.",
+    "Generate a cryptographic Proof of Time timestamp (draft-helmprotocol-tttps, https://datatracker.ietf.org/doc/draft-helmprotocol-tttps/). For Claude Code workflows: use eventId + prevEventId to build a causal chain. For DeFi: use txHash + chainId + poolAddress. Either eventId or txHash is required.",
     {
       eventId: z.string().optional().describe("Workflow step identifier (Claude Code). E.g. 'refactor_auth_step1'"),
       prevEventId: z.string().optional().describe("Previous step's eventId — links steps into a causal chain"),
@@ -282,7 +284,7 @@ async function main() {
       // Health check for Docker/Glama container probes
       if (req.method === "GET" && (req.url === "/health" || req.url === "/ping")) {
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ status: "ok", server: "ttt-mcp", version: "0.3.0" }));
+        res.end(JSON.stringify({ status: "ok", server: "ttt-mcp", version: "0.3.1" }));
         return;
       }
       // Rate limiting — free tier: 100 calls/day per IP (HTTP mode only);

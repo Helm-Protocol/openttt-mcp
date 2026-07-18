@@ -130,6 +130,27 @@ function depthThresholdFromTokens(maxTokens: number, entryCount: number): { comp
   };
 }
 
+// ---------- TTT Seal Layer — freshness tracking ----------
+
+let _lastPotTimestampNs: bigint | null = null;
+let _lastPotStratum: number = 16;
+let _lastPotSources: number = 0;
+
+export function updateLastPot(timestampNs: bigint, stratum: number, sources: number): void {
+  _lastPotTimestampNs = timestampNs;
+  _lastPotStratum = stratum;
+  _lastPotSources = sources;
+}
+
+export function tttsFreshnessSeal(): { age_ms: number; stratum: number; sources: number; ttlMs: number } | null {
+  if (_lastPotTimestampNs === null) return null;
+  const nowNs = BigInt(Date.now()) * 1_000_000n;
+  const age_ms = Number((nowNs - _lastPotTimestampNs) / 1_000_000n);
+  // ttlMs = suggested cache TTL based on stratum quality (MCP RC ttlMs concept)
+  const ttlMs = _lastPotStratum <= 3 ? 100 : _lastPotStratum <= 8 ? 1000 : _lastPotStratum <= 15 ? 5000 : 0;
+  return { age_ms, stratum: _lastPotStratum, sources: _lastPotSources, ttlMs };
+}
+
 // ---------- DAG Restoration (called by index.ts on startup) ----------
 
 // Restores a persisted entry directly into in-memory structures.
@@ -327,6 +348,8 @@ export async function potGenerate(args: {
       })
     ).catch(() => {});
   }
+
+  updateLastPot(pot.timestamp, pot.stratum, pot.sources);
 
   return serialize({
     potHash,

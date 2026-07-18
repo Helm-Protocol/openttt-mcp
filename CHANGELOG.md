@@ -2,6 +2,12 @@
 
 All notable changes to `@helm-protocol/ttt-mcp` are documented here.
 
+## [0.3.1] - 2026-07-18
+
+### Added — TTT Seal Layer
+
+- **`_tttps_freshness` on every tool response** — all MCP tool responses now include a freshness stamp: `{ age_ms, stratum, sources, ttlMs }`. `age_ms` = milliseconds since last PoT was generated. `ttlMs` = suggested MCP cache TTL (aligns with MCP RC 2026-07-28 `ttlMs` concept). Only populated after first `pot_generate` call.
+
 ## [0.3.0] - 2026-05-29
 
 ### Added — Amnesia Prevention P1~P5
