@@ -6,6 +6,18 @@
 
 ---
 
+## EU AI Act Art. 50 — AI-Generated Content Transparency
+
+TTTPS provides cryptographic time-provenance for AI-generated content at the moment of creation. A `pot_generate` call anchors a tamper-evident timestamp to a cryptographic hash of the content record — independently of any embedded metadata.
+
+**C2PA complementarity**: C2PA metadata is stripped during recapture, transcoding, and format conversion. TTTPS survives as an external anchor independently verifiable without metadata chain continuity — allowing forensic reconstruction of content provenance even when embedded markers are absent.
+
+**GDPR-compatible by design**: PoT records contain no content and no personal identifiers. Each record binds a cryptographic hash (SHA-256 + HMAC-SHA256) to a multi-source time attestation. No plaintext content transits or is stored on Helm servers.
+
+IETF specification: [`draft-helmprotocol-tttps`](https://datatracker.ietf.org/doc/draft-helmprotocol-tttps/) (ISE track). Contact: peter@kenosian.com.
+
+---
+
 ## The Problem: Workflow Amnesia
 
 Every Claude Code long-horizon workflow hits the same wall: **context compression erases action history.**
