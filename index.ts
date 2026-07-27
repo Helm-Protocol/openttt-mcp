@@ -154,6 +154,7 @@ function buildMcpServer(): McpServer {
       chainId: z.number().optional().describe("EVM chain ID (DeFi, e.g. 8453 for Base)"),
       poolAddress: z.string().optional().describe("DEX pool contract address (DeFi)"),
     },
+    { title: "Generate Proof of Time", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     async (args) => {
       try {
         const result = await potGenerate(args);
@@ -173,6 +174,7 @@ function buildMcpServer(): McpServer {
       chainId: z.number().describe("EVM chain ID (e.g. 84532 for Base Sepolia)"),
       poolAddress: z.string().describe("Uniswap V4 pool address (0x-prefixed)"),
     },
+    { title: "Verify Proof of Time", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     async (args) => {
       try {
         const result = await potVerify(args);
@@ -192,6 +194,7 @@ function buildMcpServer(): McpServer {
       endTime: z.number().optional().describe("End time (unix ms). Default: now"),
       limit: z.number().optional().describe("Max entries to return. Default: 100, max: 1000"),
     },
+    { title: "Query Proof of Time Records", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     async (args) => {
       try {
         const result = await potQuery(args);
@@ -209,6 +212,7 @@ function buildMcpServer(): McpServer {
       eventId: z.string().describe("The workflow step to start traversal from"),
       depth: z.number().optional().describe("Max backward traversal depth. Default: 10, max: 100"),
     },
+    { title: "Traverse PoT Causal Chain", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     async (args) => {
       try {
         const result = await potGraph(args);
@@ -223,6 +227,7 @@ function buildMcpServer(): McpServer {
     "pot_stats",
     "Get PoT statistics: total swaps, turbo/full counts, and turbo ratio for a given period.",
     { period: z.enum(["day", "week", "month"]).describe("Time period for statistics") },
+    { title: "PoT Statistics", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     async (args) => {
       try {
         const result = await potStats(args);
@@ -237,6 +242,7 @@ function buildMcpServer(): McpServer {
     "pot_health",
     "Check PoT system health: time source status, subgraph sync, server uptime, and current mode.",
     {},
+    { title: "PoT System Health", readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     async () => {
       try {
         const result = await potHealth();
@@ -257,6 +263,7 @@ function buildMcpServer(): McpServer {
       endTime: z.number().optional().describe("Unix ms end time (optional, default: now)"),
       maxTokens: z.number().optional().describe("Approximate max tokens for rollup (default: 2000)"),
     },
+    { title: "Create PoT Checkpoint", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     async (args) => {
       try {
         const result = await potCheckpoint(args);

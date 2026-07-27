@@ -52,7 +52,7 @@
     "node": ">=18"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.12.1",
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "ioredis": "^5.11.0",
     "openttt": "^0.2.13",
     "zod": "^3.25.0"

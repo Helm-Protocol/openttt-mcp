@@ -235,6 +235,13 @@ export async function potGenerate(args: {
       path: "/pot/generate",
       body: { eventId: args.eventId, prevEventId: args.prevEventId },
     });
+    // MCP RC: update freshness seal with actual stratum/sources from server response
+    if (data && typeof data === "object") {
+      const d = data as Record<string, unknown>;
+      if (typeof d.stratum === "number" && typeof d.sources === "number" && typeof d.timestamp === "string") {
+        updateLastPot(BigInt(d.timestamp), d.stratum as number, d.sources as number);
+      }
+    }
     return applyAdvisory(data, advisory);
   }
 
