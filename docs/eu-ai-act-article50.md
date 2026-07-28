@@ -65,7 +65,7 @@ The PoT record is **external** — stored at the `pot_uri`, independent of the c
 
 | Property | Implementation |
 |----------|---------------|
-| Timestamp precision | ±10ns (Roughtime consensus, KTSat) |
+| Timestamp precision | millisecond-range (Roughtime/NTP default; ±10ns with KTSat GEO source is a roadmap configuration) |
 | Timestamp non-repudiation | Ed25519 `issuer_sig` over 180-octet record — cannot be backdated |
 | Integrity | GRG (Golomb→Reed-Solomon→Golay) — detects and corrects tampering |
 | Session independence | PoT record is self-contained — verifiable by any third party without the original TLS session |
@@ -92,7 +92,7 @@ Recipients (MCP clients, compliance systems) can verify the timestamp independen
 Article 50 Layer 1: C2PA manifest (who generated, with what model)
                   + TTTPS PoT   (when, tamper-evident, survives strip)
 Article 50 Layer 2: Invisible watermarking (SynthID, AudioSeal)
-Article 12:         openttt-mcp audit log (event-by-event tool call record)
+Article 12:         openttt-mcp audit log — applies to Annex III high-risk AI systems only
 ```
 
 The four-layer stack satisfies both Article 50 (content marking) and Article 12 (high-risk AI event logging) requirements.
