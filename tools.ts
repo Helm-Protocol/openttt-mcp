@@ -10,6 +10,14 @@ const GrgPipeline: { processForward: (data: Uint8Array, chainId: number, poolAdd
   (require("openttt") as Record<string, unknown>).GrgPipeline as typeof GrgPipeline ?? null;
 import { telemetryIncrement } from "./telemetry";
 import { delegateToServer, QuotaExceededError, type QuotaAdvisory } from "./server";
+import { createPrivateKey, createHash, randomBytes } from "crypto";
+import {
+  assemblePotRecordV08,
+  verifyPotRecordV08,
+  RESERVED_ERROR_BOUND,
+  MTI_INTEGRITY_ALG_SHA256,
+  type PotRecordV08Fields,
+} from "./pot_record_v08";
 
 // ---------- Quota advisory helpers ----------
 // Non-destructive: appends advisory notice to a result object without altering core fields.
@@ -51,6 +59,26 @@ const timeSynth = new TimeSynthesis();
 const adaptiveSwitch = new AdaptiveSwitch();
 const potSigner = new PotSigner(); // ephemeral Ed25519 keypair per server session
 const startedAt = Date.now();
+
+// ---------- draft-helmprotocol-tttps-08 §3 Proof-of-Time Record ----------
+// Reuses potSigner's ephemeral Ed25519 identity (same key as the existing
+// potHash/signPot path) — no separate key management introduced here.
+const potSignerPrivateKeyV08 = createPrivateKey({
+  key: Buffer.from(potSigner.getPrivateKeyHex(), "hex"),
+  format: "der",
+  type: "pkcs8",
+});
+const potSignerPublicKeyRawV08 = Buffer.from(potSigner.getPubKeyHex(), "hex").subarray(-32);
+const potSignerIssuerKeyIdV08 = createHash("sha256").update(potSignerPublicKeyRawV08).digest().subarray(0, 8);
+// Default ctx_id (draft-08 §3.3 domain separator) when the caller doesn't
+// supply one — mirrors openttt-server's default_ctx_id() convention
+// ("service:instance" style opaque string, not a secret).
+const DEFAULT_CTX_ID_V08 = "openttt-mcp/pot_generate";
+// This server has no configured Tier (draft-08 §6); T3Micro=3 matches the
+// nanosecond-timestamp default already used elsewhere in this codebase
+// (see openttt-server/src/pot_service.rs default_tier()).
+const DEFAULT_TIER_V08 = 3;
+const CONTENT_DIGEST_HEX_RE = /^[0-9a-f]{64}$/;
 
 // In-memory PoT anchor log (bounded ring buffer)
 const POT_LOG_MAX = 10000;
@@ -218,17 +246,25 @@ export async function potGenerate(args: {
   txHash?: string;
   chainId?: number;
   poolAddress?: string;
+  contentDigest?: string;
+  ctxId?: string;
 }): Promise<unknown> {
-  if (!args.eventId && !args.txHash) {
-    throw new Error("Either eventId (Claude Code) or txHash (DeFi) is required");
+  if (!args.eventId && !args.txHash && !args.contentDigest) {
+    throw new Error("One of eventId (Claude Code), txHash (DeFi), or contentDigest is required");
+  }
+  if (args.contentDigest !== undefined && !CONTENT_DIGEST_HEX_RE.test(args.contentDigest)) {
+    throw new Error("contentDigest must be a 64-character lowercase hex SHA-256 digest");
   }
   telemetryIncrement("pot_generate");
 
   // Paid path: delegate to openttt-server (server enforces plan quota → 429).
   // Server-side pot_generate keys on eventId; for DeFi-only calls (txHash with
   // no eventId) we keep the local path since the server has no DeFi shard route.
+  // contentDigest / draft-08 Payload Digest is not yet wired into the server's
+  // delegation body, so a contentDigest request always stays on the local path
+  // below rather than silently dropping the field.
   const apiKey = resolvePaidApiKey();
-  if (apiKey && args.eventId) {
+  if (apiKey && args.eventId && !args.contentDigest) {
     const { data, advisory } = await delegateToServer({
       apiKey,
       method: "POST",
@@ -358,6 +394,39 @@ export async function potGenerate(args: {
 
   updateLastPot(pot.timestamp, pot.stratum, pot.sources);
 
+  // draft-helmprotocol-tttps-08 §3 Proof-of-Time Record — built only when the
+  // caller supplied a contentDigest AND the time synthesis actually meets the
+  // spec's own MUST constraints (>=3 sources, a representable non-reserved
+  // error bound). We do not emit a non-conformant record; if a precondition
+  // fails, potRecordV08Error explains why instead of silently omitting it.
+  let potRecordV08: string | undefined;
+  let potRecordV08CtxId: string | undefined;
+  let potRecordV08Error: string | undefined;
+  if (args.contentDigest !== undefined) {
+    const ctxId = args.ctxId ?? DEFAULT_CTX_ID_V08;
+    const errorBoundUs = Math.round(pot.uncertainty * 1000); // ms -> us
+    if (isOfflineFallback || pot.sources < 3) {
+      potRecordV08Error = `Src Cnt is ${pot.sources}, but draft-08 §3.2 requires at least 3 independent time sources`;
+    } else if (errorBoundUs < 0 || errorBoundUs >= RESERVED_ERROR_BOUND) {
+      potRecordV08Error = `Error Bound ${errorBoundUs}us is not representable in the 24-bit field (or hits the reserved value)`;
+    } else {
+      const fields: PotRecordV08Fields = {
+        version: 1,
+        tier: DEFAULT_TIER_V08,
+        integrityAlg: MTI_INTEGRITY_ALG_SHA256,
+        srcCnt: pot.sources,
+        errorBoundUs,
+        timestampNs: pot.timestamp,
+        issuerKeyId: potSignerIssuerKeyIdV08,
+        nonce: randomBytes(32),
+        payloadDigest: Buffer.from(args.contentDigest, "hex"),
+      };
+      const record = assemblePotRecordV08(fields, ctxId, potSignerPrivateKeyV08);
+      potRecordV08 = record.toString("hex");
+      potRecordV08CtxId = ctxId;
+    }
+  }
+
   return serialize({
     potHash,
     eventId: args.eventId ?? null,
@@ -376,6 +445,8 @@ export async function potGenerate(args: {
       signature: signature.signature,
       issuedAt: signature.issuedAt.toString(),
     },
+    ...(potRecordV08 !== undefined && { potRecordV08, potRecordV08CtxId, potRecordV08IssuerPubKey: potSignerPublicKeyRawV08.toString("hex") }),
+    ...(potRecordV08Error !== undefined && { potRecordV08Error }),
   });
 }
 
@@ -408,6 +479,35 @@ export async function potVerify(args: {
     mode,
     potHash: args.potHash,
     reconstructedBytes: reconstructedSize,
+    verifiedAt: Date.now(),
+  });
+}
+
+// ---------- Tool: pot_verify_v08 ----------
+// draft-helmprotocol-tttps-08 §3.5 Verification, for records produced by
+// pot_generate's potRecordV08 output — distinct from pot_verify above,
+// which reconstructs GRG DeFi integrity shards and is unrelated.
+
+export async function potVerifyV08(args: {
+  potRecordV08: string; // hex-encoded 184 or 216-octet record
+  ctxId?: string;
+  issuerPubKey?: string; // hex-encoded 32-byte raw Ed25519 public key; defaults to this server's own key
+  content?: string; // optional payload (utf8) to check against the Payload Digest field
+}): Promise<unknown> {
+  telemetryIncrement("pot_verify_v08");
+
+  const record = Buffer.from(args.potRecordV08, "hex");
+  const ctxId = args.ctxId ?? DEFAULT_CTX_ID_V08;
+  const issuerPubKey = args.issuerPubKey !== undefined ? Buffer.from(args.issuerPubKey, "hex") : potSignerPublicKeyRawV08;
+  const content = args.content !== undefined ? Buffer.from(args.content, "utf8") : undefined;
+
+  const result = verifyPotRecordV08(record, ctxId, issuerPubKey, content);
+
+  return serialize({
+    verdict: result.verdict,
+    reason: result.reason ?? null,
+    payloadDigestMatchesContent: result.payloadDigestMatchesContent ?? null,
+    ctxId,
     verifiedAt: Date.now(),
   });
 }

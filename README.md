@@ -2,7 +2,7 @@
 
 > Reference implementation of [draft-helmprotocol-tttps](https://datatracker.ietf.org/doc/draft-helmprotocol-tttps/) (IETF Experimental)
 
-**MCP Server for OpenTTT — Proof of Time tools for AI agents**
+**Proof-of-Time attestation — Ed25519-signed timestamps with multi-source corroboration and explicit error bounds. IETF draft-helmprotocol-tttps**
 
 ---
 
@@ -127,12 +127,13 @@ pot_graph(eventId: "step-2", depth: 5)
 
 ---
 
-## 7 Tools
+## 8 Tools
 
 | Tool | Purpose |
 |------|---------|
 | `pot_generate` | Stamp a workflow step with a cryptographic timestamp |
 | `pot_verify` | Verify a PoT signature |
+| `pot_verify_v08` | Verify a draft-08 §3 Payload Digest record |
 | `pot_query` | O(1) exact lookup by eventId — core amnesia recovery |
 | `pot_graph` | Traverse causal DAG (backward + forward chain) |
 | `pot_checkpoint` | Roll up events into a compressed summary — use every ~100 events or before long tasks |
@@ -145,7 +146,7 @@ pot_graph(eventId: "step-2", depth: 5)
 
 ### pot_generate
 
-Stamp a workflow step with a cryptographic timestamp. For Claude Code: use `eventId` + `prevEventId`. For DeFi: use `txHash` + `chainId` + `poolAddress`. One of `eventId` or `txHash` is required.
+Stamp a workflow step with a cryptographic timestamp. For Claude Code: use `eventId` + `prevEventId`. For DeFi: use `txHash` + `chainId` + `poolAddress`. To bind the attestation to a specific piece of content (draft-08 §3 Payload Digest), also supply `contentDigest`. One of `eventId`, `txHash`, or `contentDigest` is required.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -154,6 +155,19 @@ Stamp a workflow step with a cryptographic timestamp. For Claude Code: use `even
 | txHash | string | Either/or | Transaction hash (DeFi, hex with 0x prefix) |
 | chainId | number | No | EVM chain ID (DeFi) |
 | poolAddress | string | No | DEX pool contract address (DeFi) |
+| contentDigest | string | Either/or | SHA-256 digest (lowercase hex, 64 chars) of the content this record attests to. Computed by the caller — the server never sees the content. When the local time synthesis meets draft-08's own requirements (≥3 independent sources, a representable error bound), the response includes a spec-conformant `potRecordV08` binary record (hex); otherwise `potRecordV08Error` explains why not. |
+| ctxId | string | No | draft-08 §3.3 context identifier (Commitment domain separator, max 255 octets). Defaults to a fixed server value; MAY be public. |
+
+### pot_verify_v08
+
+Verify a draft-08 §3 record produced by `pot_generate`'s `potRecordV08` field: recomputes the Commitment, checks the Ed25519 signature, and — if `content` is supplied — checks it against the record's Payload Digest.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| potRecordV08 | string | Yes | Hex-encoded 184 or 216-octet record |
+| ctxId | string | No | Must match what `pot_generate` used, or verification fails |
+| issuerPubKey | string | No | Hex-encoded 32-byte raw Ed25519 public key. Defaults to this server's own key. |
+| content | string | No | Payload to check against the record's Payload Digest field |
 
 ### pot_query
 

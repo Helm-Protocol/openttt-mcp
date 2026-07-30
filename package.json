@@ -1,7 +1,7 @@
 {
   "name": "@helm-protocol/ttt-mcp",
-  "version": "0.3.1",
-  "description": "MCP Server for OpenTTT — Proof of Time tools for AI agents",
+  "version": "0.3.2",
+  "description": "Proof-of-Time attestation — Ed25519-signed timestamps with multi-source corroboration and explicit error bounds. IETF draft-helmprotocol-tttps",
   "main": "dist/index.js",
   "bin": {
     "ttt-mcp": "./dist/index.js"

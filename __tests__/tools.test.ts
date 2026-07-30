@@ -76,7 +76,7 @@ jest.mock("openttt", () => {
 });
 
 // ---- Imports (after mocks are hoisted) ----
-import { potGenerate, potQuery, potGraph, potCheckpoint, potStats } from "../tools";
+import { potGenerate, potVerifyV08, potQuery, potGraph, potCheckpoint, potStats } from "../tools";
 import { AdaptiveMode } from "openttt";
 
 // ---- Helper ----
@@ -151,10 +151,77 @@ describe("potGenerate", () => {
     expect(sig.issuerPubKey).toBeTruthy();
   });
 
-  test("throws when neither eventId nor txHash provided", async () => {
+  test("throws when neither eventId, txHash, nor contentDigest provided", async () => {
     await expect(potGenerate({})).rejects.toThrow(
-      "Either eventId (Claude Code) or txHash (DeFi) is required"
+      "One of eventId (Claude Code), txHash (DeFi), or contentDigest is required"
     );
+  });
+
+  test("throws on malformed contentDigest", async () => {
+    await expect(potGenerate({ contentDigest: "not-hex" })).rejects.toThrow(
+      "contentDigest must be a 64-character lowercase hex SHA-256 digest"
+    );
+  });
+
+  test("contentDigest with the default mock's large uncertainty yields potRecordV08Error, not a thrown error", async () => {
+    // Default mock: sources=3, uncertainty=500_000 (ms) -> 500,000,000us, far past
+    // the 24-bit Error Bound field's ~16.78M-us ceiling. The call must still
+    // succeed (it's a valid pot_generate response) with the field explained,
+    // not a fabricated non-conformant record and not a thrown error.
+    const digest = require("crypto").createHash("sha256").update("test payload").digest("hex");
+    const result = (await potGenerate({ eventId: uniqueId("cd-toolarge"), contentDigest: digest })) as Record<
+      string,
+      unknown
+    >;
+    expect(result.potRecordV08).toBeUndefined();
+    expect(typeof result.potRecordV08Error).toBe("string");
+    expect(result.potRecordV08Error as string).toMatch(/24-bit/);
+  });
+
+  test("contentDigest with a spec-representable uncertainty produces a potRecordV08 that pot_verify_v08 confirms intact", async () => {
+    const { TimeSynthesis } = jest.requireMock("openttt") as {
+      TimeSynthesis: { prototype: { generateProofOfTime: jest.Mock } };
+    };
+    const original = TimeSynthesis.prototype.generateProofOfTime;
+    TimeSynthesis.prototype.generateProofOfTime = jest.fn().mockResolvedValueOnce({
+      timestamp: 1785024000000000000n,
+      stratum: 2,
+      uncertainty: 50, // ms -> 50,000us, well within the 24-bit field
+      confidence: 1,
+      sources: 4,
+      nonce: "aa".repeat(16),
+      expiresAt: 1785024300000000000n,
+      sourceReadings: [],
+    });
+
+    const payload = "the quick brown fox jumps over the lazy dog";
+    const digest = require("crypto").createHash("sha256").update(payload).digest("hex");
+    const result = (await potGenerate({ eventId: uniqueId("cd-ok"), contentDigest: digest })) as Record<
+      string,
+      unknown
+    >;
+
+    TimeSynthesis.prototype.generateProofOfTime = original;
+
+    expect(result.potRecordV08Error).toBeUndefined();
+    expect(typeof result.potRecordV08).toBe("string");
+    expect((result.potRecordV08 as string).length).toBe(184 * 2); // no holder key -> 184 octets
+
+    const verified = (await potVerifyV08({
+      potRecordV08: result.potRecordV08 as string,
+      ctxId: result.potRecordV08CtxId as string,
+      content: payload,
+    })) as Record<string, unknown>;
+    expect(verified.verdict).toBe("intact");
+    expect(verified.payloadDigestMatchesContent).toBe(true);
+
+    const wrongContent = (await potVerifyV08({
+      potRecordV08: result.potRecordV08 as string,
+      ctxId: result.potRecordV08CtxId as string,
+      content: "not the payload",
+    })) as Record<string, unknown>;
+    expect(wrongContent.verdict).toBe("rejected");
+    expect(wrongContent.payloadDigestMatchesContent).toBe(false);
   });
 
   test("prevEventId links to parent in potLog", async () => {

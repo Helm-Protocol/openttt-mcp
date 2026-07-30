@@ -2,6 +2,14 @@
 
 All notable changes to `@helm-protocol/ttt-mcp` are documented here.
 
+## [0.3.2] - 2026-07-30
+
+### Added — draft-helmprotocol-tttps-08 §3 Payload Digest
+
+- **`contentDigest` parameter on `pot_generate`** — caller-supplied SHA-256 digest of the content being attested. When supplied, and the local time synthesis meets the spec's own requirements (≥3 independent sources, a representable error bound), the response includes a spec-conformant `potRecordV08` binary record (184 or 216 octets, hex-encoded); otherwise `potRecordV08Error` explains why not. The server never sees the content itself, only its digest.
+- **New tool `pot_verify_v08`** — recomputes the record's Commitment (draft-08 §3.3.2, algorithm 0x0001, SHA-256) and Ed25519 signature, and, if `content` is supplied, checks it against the record's Payload Digest field.
+- **`pot_record_v08.ts`** — record encode/decode/commitment/sign/verify, tested byte-exact against both Appendix A test vectors of draft-helmprotocol-tttps-08.
+
 ## [0.3.1] - 2026-07-18
 
 ### Added — TTT Seal Layer

@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 // @helm-protocol/ttt-mcp — MCP Server for OpenTTT Proof of Time
-// Provides 7 tools for AI agents: pot_generate, pot_verify, pot_query,
-// pot_graph, pot_stats, pot_health, pot_checkpoint
+// Provides 8 tools for AI agents: pot_generate, pot_verify, pot_verify_v08,
+// pot_query, pot_graph, pot_stats, pot_health, pot_checkpoint
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createServer } from "http";
 import { z } from "zod";
-import { potGenerate, potVerify, potQuery, potGraph, potStats, potHealth, potCheckpoint, restoreDagEntry, redis, tttsFreshnessSeal } from "./tools";
+import { potGenerate, potVerify, potVerifyV08, potQuery, potGraph, potStats, potHealth, potCheckpoint, restoreDagEntry, redis, tttsFreshnessSeal } from "./tools";
 import { checkRateLimit, resolveApiKey } from "./auth";
 import { FREE_TIER_UPGRADE_MESSAGE, UPGRADE_URL, QuotaExceededError } from "./server";
 
@@ -142,17 +142,29 @@ function toolSuccess(result: unknown): { content: { type: "text"; text: string }
 }
 
 function buildMcpServer(): McpServer {
-  const s = new McpServer({ name: "ttt-mcp", version: "0.3.1" });
+  const s = new McpServer({ name: "ttt-mcp", version: "0.3.2" });
 
   s.tool(
     "pot_generate",
-    "Generate a cryptographic Proof of Time timestamp (draft-helmprotocol-tttps, https://datatracker.ietf.org/doc/draft-helmprotocol-tttps/). For Claude Code workflows: use eventId + prevEventId to build a causal chain. For DeFi: use txHash + chainId + poolAddress. Either eventId or txHash is required.",
+    "Generate a cryptographic Proof of Time timestamp (draft-helmprotocol-tttps, https://datatracker.ietf.org/doc/draft-helmprotocol-tttps/). For Claude Code workflows: use eventId + prevEventId to build a causal chain. For DeFi: use txHash + chainId + poolAddress. For a spec-conformant draft-08 §3 record binding this attestation to a specific piece of content, also supply contentDigest. One of eventId, txHash, or contentDigest is required.",
     {
       eventId: z.string().optional().describe("Workflow step identifier (Claude Code). E.g. 'refactor_auth_step1'"),
       prevEventId: z.string().optional().describe("Previous step's eventId — links steps into a causal chain"),
       txHash: z.string().optional().describe("Transaction hash (DeFi, hex with 0x prefix)"),
       chainId: z.number().optional().describe("EVM chain ID (DeFi, e.g. 8453 for Base)"),
       poolAddress: z.string().optional().describe("DEX pool contract address (DeFi)"),
+      contentDigest: z
+        .string()
+        .regex(/^[0-9a-f]{64}$/)
+        .optional()
+        .describe(
+          "SHA-256 digest (lowercase hex, 64 characters) of the content this record attests to. Computed by the caller — the server never sees the content itself. When supplied, and the local time synthesis meets draft-08's own requirements (>=3 independent sources, a representable error bound), the response includes a spec-conformant potRecordV08 binary record (hex-encoded) in addition to the usual potHash fields; otherwise potRecordV08Error explains why it could not be produced."
+        ),
+      ctxId: z
+        .string()
+        .max(255)
+        .optional()
+        .describe("draft-08 §3.3 context identifier (domain separator for the Commitment). Defaults to a fixed server value if omitted; MAY be public."),
     },
     { title: "Generate Proof of Time", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     async (args) => {
@@ -178,6 +190,26 @@ function buildMcpServer(): McpServer {
     async (args) => {
       try {
         const result = await potVerify(args);
+        return toolSuccess(result);
+      } catch (err: unknown) {
+        return toolError(err);
+      }
+    }
+  );
+
+  s.tool(
+    "pot_verify_v08",
+    "Verify a draft-helmprotocol-tttps-08 §3 Proof-of-Time record (as produced by pot_generate's potRecordV08 field): recomputes the Commitment and checks the Ed25519 signature, and — if content is supplied — recomputes SHA-256(content) and checks it against the record's Payload Digest field.",
+    {
+      potRecordV08: z.string().describe("Hex-encoded 184 or 216-octet record from pot_generate's potRecordV08 field"),
+      ctxId: z.string().max(255).optional().describe("Context identifier the record was generated under. Must match what pot_generate used, or verification fails."),
+      issuerPubKey: z.string().optional().describe("Hex-encoded 32-byte raw Ed25519 issuer public key. Defaults to this server's own key."),
+      content: z.string().optional().describe("The payload (utf8) to check against the record's Payload Digest field, if available"),
+    },
+    { title: "Verify draft-08 Proof-of-Time Record", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    async (args) => {
+      try {
+        const result = await potVerifyV08(args);
         return toolSuccess(result);
       } catch (err: unknown) {
         return toolError(err);
@@ -291,7 +323,7 @@ async function main() {
       // Health check for Docker/Glama container probes
       if (req.method === "GET" && (req.url === "/health" || req.url === "/ping")) {
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ status: "ok", server: "ttt-mcp", version: "0.3.1" }));
+        res.end(JSON.stringify({ status: "ok", server: "ttt-mcp", version: "0.3.2" }));
         return;
       }
       // Rate limiting — free tier: 100 calls/day per IP (HTTP mode only);
