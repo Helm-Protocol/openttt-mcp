@@ -55,12 +55,12 @@ Claude workflow → [context compressed] → agents call pot_query(eventId)
 ### Claude Code
 
 ```bash
-claude mcp add ttt -- npx -y @helm-protocol/ttt-mcp@0.3.0
+claude mcp add ttt -- npx -y @helm-protocol/ttt-mcp@0.3.2
 ```
 
 With an API key (raises the free limit to your plan's monthly quota):
 ```bash
-claude mcp add ttt -e TTT_API_KEY=your-key -- npx -y @helm-protocol/ttt-mcp@0.3.0
+claude mcp add ttt -e TTT_API_KEY=your-key -- npx -y @helm-protocol/ttt-mcp@0.3.2
 ```
 
 ### Claude Desktop
@@ -72,7 +72,7 @@ Add to `claude_desktop_config.json`:
   "mcpServers": {
     "ttt": {
       "command": "npx",
-      "args": ["-y", "@helm-protocol/ttt-mcp@0.3.0"],
+      "args": ["-y", "@helm-protocol/ttt-mcp@0.3.2"],
       "env": { "TTT_API_KEY": "your-key" }
     }
   }
@@ -81,7 +81,7 @@ Add to `claude_desktop_config.json`:
 
 ### Cursor
 
-[![Add to Cursor](https://img.shields.io/badge/Add%20to%20Cursor-1a1a1a?style=flat&logo=cursor&logoColor=white)](https://cursor.com/install-mcp?name=ttt&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBoZWxtLXByb3RvY29sL3R0dC1tY3BAMC4zLjAiXX0=)
+[![Add to Cursor](https://img.shields.io/badge/Add%20to%20Cursor-1a1a1a?style=flat&logo=cursor&logoColor=white)](https://cursor.com/install-mcp?name=ttt&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBoZWxtLXByb3RvY29sL3R0dC1tY3BAMC4zLjIiXX0=)
 
 One-click install, or add the same `mcpServers` block above to `.cursor/mcp.json`.
 
