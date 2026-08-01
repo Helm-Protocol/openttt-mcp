@@ -1,7 +1,7 @@
 {
   "name": "@helm-protocol/ttt-mcp",
-  "version": "0.3.3",
-  "description": "Proof-of-Time attestation \u2014 Ed25519-signed timestamps with multi-source corroboration and explicit error bounds. IETF draft-helmprotocol-tttps",
+  "version": "0.3.4",
+  "description": "Proof-of-Time attestation — Ed25519-signed timestamps with multi-source corroboration and explicit error bounds. IETF draft-helmprotocol-tttps",
   "main": "dist/index.js",
   "bin": {
     "ttt-mcp": "./dist/index.js"
@@ -59,7 +59,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
     "ioredis": "^5.11.0",
-    "openttt": "^0.2.13",
+    "openttt": "^0.3.1",
     "zod": "^3.25.0"
   },
   "devDependencies": {
