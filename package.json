@@ -1,7 +1,7 @@
 {
   "name": "@helm-protocol/ttt-mcp",
-  "version": "0.3.2",
-  "description": "Proof-of-Time attestation — Ed25519-signed timestamps with multi-source corroboration and explicit error bounds. IETF draft-helmprotocol-tttps",
+  "version": "0.3.3",
+  "description": "Proof-of-Time attestation \u2014 Ed25519-signed timestamps with multi-source corroboration and explicit error bounds. IETF draft-helmprotocol-tttps",
   "main": "dist/index.js",
   "bin": {
     "ttt-mcp": "./dist/index.js"
@@ -20,16 +20,21 @@
   "jest": {
     "preset": "ts-jest",
     "testEnvironment": "node",
-    "testMatch": ["**/__tests__/**/*.test.ts"],
+    "testMatch": [
+      "**/__tests__/**/*.test.ts"
+    ],
     "moduleNameMapper": {
       "^openttt$": "<rootDir>/node_modules/openttt/dist/index.js"
     },
     "transform": {
-      "^.+\\.tsx?$": ["ts-jest", {
-        "tsconfig": {
-          "module": "CommonJS"
+      "^.+\\.tsx?$": [
+        "ts-jest",
+        {
+          "tsconfig": {
+            "module": "CommonJS"
+          }
         }
-      }]
+      ]
     }
   },
   "keywords": [
