@@ -19,6 +19,9 @@ jobs:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
           package-manager-cache: false
+      # Remove setup-node empty auth placeholder so npm uses OIDC
+      - name: Remove token placeholder for npm OIDC
+        run: sed -i "/_authToken/d" "${NPM_CONFIG_USERCONFIG:-$HOME/.npmrc}"
       - name: Upgrade npm for Trusted Publishing
         run: npm install --global npm@latest --force
       - run: npm --version
