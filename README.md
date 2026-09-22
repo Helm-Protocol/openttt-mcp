@@ -168,6 +168,12 @@ Verify a draft-08 §3 record produced by `pot_generate`'s `potRecordV08` field: 
 | ctxId | string | No | Must match what `pot_generate` used, or verification fails |
 | issuerPubKey | string | No | Hex-encoded 32-byte raw Ed25519 public key. Defaults to this server's own key. |
 | content | string | No | Payload to check against the record's Payload Digest field |
+| clientId | string | Required when `TTTPS_REQUIRE_REPLAY_LEDGER=1` | Stable caller identity for the replay key |
+| sessionId | string | Required when `TTTPS_REQUIRE_REPLAY_LEDGER=1` | Active transport/session identifier for the replay key |
+
+When `TTTPS_REQUIRE_V08_FRESHNESS=1`, `TTTPS_V08_MAX_SKEW_NS` MUST be set to a non-negative integer. The verifier rejects records outside `maxSkewNs + errorBoundUs`. When `TTTPS_REQUIRE_REPLAY_LEDGER=1`, a successful verification atomically claims `clientId/sessionId/nonce` in Redis with a 90-day TTL; Redis failure or a second claim is rejected. These flags are fail-closed controls.
+
+The current MCP canonical wire profile is draft-11 PoT Record v2 (180 octets). `pot_generate_v2` and `pot_verify_v2` implement the fixed core record, including SHA-256 integrity over octets 0-79 and Ed25519 issuer authentication over octets 0-115. Draft-08 remains available through `pot_verify_v08` for legacy interoperability only. TLS binding proof is a separate 64/32-octet value; `TTTPS_V2_REQUIRE_BINDING=1` fails closed unless the server is running over direct TLS 1.3; stdio and plain HTTP have no TLS exporter. Configure `MCP_TLS_CERT_FILE` and `MCP_TLS_KEY_FILE` for the HTTPS mode. Replay claims use `(ctx_id, nonce)` with `TTTPS_REPLAY_TTL_SECONDS` (default 86400).
 
 ### pot_query
 

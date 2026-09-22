@@ -223,6 +223,11 @@ export interface VerifyResultV08 {
   payloadDigestMatchesContent?: boolean; // undefined if no content supplied
 }
 
+export interface FreshnessPolicyV08 {
+  nowNs: bigint;
+  maxSkewNs: bigint;
+}
+
 /** draft-08 Section 3.5, the subset of steps this MCP server can evaluate
  * without a live TLS/QUIC session binding (steps 1, 2, 5 [commitment],
  * 9 [payload digest], and the signature check folded into step 5's
@@ -232,7 +237,8 @@ export function verifyPotRecordV08(
   record: Buffer,
   ctxId: string,
   issuerPublicKeyRaw: Buffer,
-  content?: Buffer
+  content?: Buffer,
+  freshness?: FreshnessPolicyV08,
 ): VerifyResultV08 {
   let decoded: DecodedPotRecordV08;
   try {
@@ -249,6 +255,18 @@ export function verifyPotRecordV08(
   }
   if (decoded.errorBoundUs === RESERVED_ERROR_BOUND) {
     return { verdict: "rejected", reason: "Error Bound carries the reserved value 0xFFFFFF" };
+  }
+
+  if (freshness !== undefined) {
+    if (freshness.maxSkewNs < 0n) {
+      return { verdict: "rejected", reason: "invalid freshness policy" };
+    }
+    const delta = decoded.timestampNs >= freshness.nowNs
+      ? decoded.timestampNs - freshness.nowNs
+      : freshness.nowNs - decoded.timestampNs;
+    if (delta > freshness.maxSkewNs + BigInt(decoded.errorBoundUs) * 1_000n) {
+      return { verdict: "rejected", reason: "freshness window exceeded" };
+    }
   }
 
   const expectedCommitment = computeCommitmentSha256(decoded.fieldsPre, ctxId);

@@ -214,4 +214,23 @@ describe("Field validation (draft-08 Section 3.2 MUST/MUST NOT constraints)", ()
     expect(result.verdict).toBe("rejected");
     expect(result.reason).toMatch(/unimplemented integrity algorithm/);
   });
+
+  test("freshness policy rejects a record outside the configured bound", () => {
+    const record = generatePotRecordV08(baseFields, CTX_ID, ISSUER_SEED);
+    const result = verifyPotRecordV08(record, CTX_ID, ISSUER_PUBKEY, undefined, {
+      nowNs: TIMESTAMP_NS + 10_000_000_000n,
+      maxSkewNs: 1_000_000n,
+    });
+    expect(result.verdict).toBe("rejected");
+    expect(result.reason).toBe("freshness window exceeded");
+  });
+
+  test("freshness policy accepts a record inside the configured bound", () => {
+    const record = generatePotRecordV08(baseFields, CTX_ID, ISSUER_SEED);
+    const result = verifyPotRecordV08(record, CTX_ID, ISSUER_PUBKEY, undefined, {
+      nowNs: TIMESTAMP_NS + 1_000_000n,
+      maxSkewNs: 1_000_000n,
+    });
+    expect(result.verdict).toBe("intact");
+  });
 });

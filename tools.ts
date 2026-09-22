@@ -12,8 +12,16 @@ import { telemetryIncrement } from "./telemetry";
 import { delegateToServer, QuotaExceededError, type QuotaAdvisory } from "./server";
 import { createPrivateKey, createHash, randomBytes } from "crypto";
 import {
+  encodePotRecordV2,
+  verifyPotRecordV2,
+  verifyV2BindingProof,
+  computeV2ExporterContext,
+} from "./pot_record_v2";
+import { currentTransportBinding } from "./transport_context";
+import {
   assemblePotRecordV08,
   verifyPotRecordV08,
+  decodePotRecordV08,
   RESERVED_ERROR_BOUND,
   MTI_INTEGRITY_ALG_SHA256,
   type PotRecordV08Fields,
@@ -52,6 +60,50 @@ export const redis = new Redis(process.env.REDIS_URL ?? "redis://127.0.0.1:6379"
   maxRetriesPerRequest: 1,
 });
 redis.on("error", () => {}); // silent — Redis is optional persistence
+
+const REPLAY_TTL_SECONDS = Number.parseInt(process.env.TTTPS_REPLAY_TTL_SECONDS ?? "86400", 10);
+
+function requiredFlag(name: string): boolean {
+  return process.env[name]?.trim() === "1";
+}
+
+function configuredFreshnessPolicy(): { nowNs: bigint; maxSkewNs: bigint } | undefined {
+  const raw = process.env.TTTPS_V08_MAX_SKEW_NS?.trim();
+  if (!raw) return undefined;
+  try {
+    const maxSkewNs = BigInt(raw);
+    if (maxSkewNs < 0n) return undefined;
+    return { nowNs: BigInt(Date.now()) * 1_000_000n, maxSkewNs };
+  } catch {
+    return undefined;
+  }
+}
+
+async function claimV2Replay(ctxIdHex: string, nonceHex: string): Promise<"claimed" | "replay" | "unavailable"> {
+  if (!ctxIdHex || !nonceHex) return "unavailable";
+  const key = `tttps:v2:replay:${ctxIdHex}:${nonceHex}`;
+  try {
+    const result = await redis.set(key, "1", "EX", REPLAY_TTL_SECONDS, "NX");
+    return result === "OK" ? "claimed" : "replay";
+  } catch {
+    return "unavailable";
+  }
+}
+
+async function claimV08Replay(
+  clientId: string,
+  sessionId: string,
+  nonceHex: string,
+): Promise<"claimed" | "replay" | "unavailable"> {
+  if (!clientId || !sessionId || !nonceHex) return "unavailable";
+  const key = `tttps:v08:replay:${clientId}:${sessionId}:${nonceHex}`;
+  try {
+    const result = await redis.set(key, "1", "EX", REPLAY_TTL_SECONDS, "NX");
+    return result === "OK" ? "claimed" : "replay";
+  } catch {
+    return "unavailable";
+  }
+}
 
 // ---------- Shared Instances ----------
 
@@ -483,6 +535,85 @@ export async function potVerify(args: {
   });
 }
 
+
+// ---------- draft-11 §2: 180-octet PoT Record v2 ----------
+
+export async function potGenerateV2(args: {
+  holderAuthType?: number;
+  tsTaiUs: string;
+  dispersionUs: number;
+  ctxId: string; // exactly 16 octets, hex
+  holderAuthData: string; // 32 octets, hex
+}): Promise<unknown> {
+  telemetryIncrement("pot_generate_v2");
+  const ctxId = Buffer.from(args.ctxId, "hex");
+  const holderAuthData = Buffer.from(args.holderAuthData, "hex");
+  if (ctxId.length !== 16) throw new Error("ctxId must be exactly 16 bytes of hex");
+  if (holderAuthData.length !== 32) throw new Error("holderAuthData must be exactly 32 bytes of hex");
+  const tsTaiUs = BigInt(args.tsTaiUs);
+  const nonce = randomBytes(16);
+  const issuerKeyId = createHash("sha256").update(potSignerPublicKeyRawV08).digest().readUInt32BE(0);
+  const record = encodePotRecordV2({
+    holderAuthType: args.holderAuthType ?? 0x01,
+    algId: 0x0001,
+    tsTaiUs,
+    dispersionUs: args.dispersionUs,
+    ctxId,
+    nonce,
+    holderAuthData,
+    issuerKeyId,
+  }, potSignerPrivateKeyV08);
+  return serialize({
+    wireProfile: "draft-helmprotocol-tttps-11-v2",
+    potRecordV2: record.toString("hex"),
+    issuerPubKey: potSignerPublicKeyRawV08.toString("hex"),
+    issuerKeyId,
+    nonce: nonce.toString("hex"),
+    bindingProofRequired: process.env.TTTPS_V2_REQUIRE_BINDING === "1",
+  });
+}
+
+export async function potVerifyV2(args: {
+  potRecordV2: string;
+  issuerPubKey?: string;
+  nowTaiUs?: string;
+  maxSkewUs?: string;
+  clientId?: string;
+  sessionId?: string;
+  bindingProof?: string;
+}): Promise<unknown> {
+  telemetryIncrement("pot_verify_v2");
+  const bindingRequired = process.env.TTTPS_V2_REQUIRE_BINDING === "1";
+  if (bindingRequired && !args.bindingProof) {
+    return serialize({ verdict: "rejected", reason: "TLS exporter binding proof is required" });
+  }
+  const record = Buffer.from(args.potRecordV2, "hex");
+  const issuerPubKey = args.issuerPubKey ? Buffer.from(args.issuerPubKey, "hex") : potSignerPublicKeyRawV08;
+  const freshness = args.nowTaiUs !== undefined && args.maxSkewUs !== undefined
+    ? { nowTaiUs: BigInt(args.nowTaiUs), maxSkewUs: BigInt(args.maxSkewUs) }
+    : undefined;
+  const result = verifyPotRecordV2(record, issuerPubKey, freshness);
+  if (result.verdict === "rejected") return serialize(result);
+  if (args.bindingProof) {
+    const exporter = currentTransportBinding()?.exporter;
+    if (!exporter) return serialize({ verdict: "rejected", reason: "live TLS exporter unavailable" });
+    let exporterOutput: Buffer;
+    try {
+      exporterOutput = exporter(computeV2ExporterContext(record));
+    } catch {
+      return serialize({ verdict: "rejected", reason: "TLS exporter derivation failed" });
+    }
+    const binding = verifyV2BindingProof(record, Buffer.from(args.bindingProof, "hex"), exporterOutput);
+    if (binding.verdict === "rejected") return serialize(binding);
+  }
+  if (process.env.TTTPS_REQUIRE_REPLAY_LEDGER === "1") {
+    const ctxId = record.subarray(16, 32).toString("hex");
+    const replay = await claimV2Replay(ctxId, result.nonce!.toString("hex"));
+    if (replay !== "claimed") return serialize({ verdict: "rejected", reason: replay === "replay" ? "replay detected" : "replay ledger unavailable" });
+  }
+  return serialize({ verdict: "intact", wireProfile: "draft-helmprotocol-tttps-11-v2", nonce: result.nonce!.toString("hex") });
+}
+
 // ---------- Tool: pot_verify_v08 ----------
 // draft-helmprotocol-tttps-08 §3.5 Verification, for records produced by
 // pot_generate's potRecordV08 output — distinct from pot_verify above,
@@ -493,6 +624,8 @@ export async function potVerifyV08(args: {
   ctxId?: string;
   issuerPubKey?: string; // hex-encoded 32-byte raw Ed25519 public key; defaults to this server's own key
   content?: string; // optional payload (utf8) to check against the Payload Digest field
+  clientId?: string; // stable caller identity used for the durable replay key
+  sessionId?: string; // active transport/session identifier used for the durable replay key
 }): Promise<unknown> {
   telemetryIncrement("pot_verify_v08");
 
@@ -501,12 +634,43 @@ export async function potVerifyV08(args: {
   const issuerPubKey = args.issuerPubKey !== undefined ? Buffer.from(args.issuerPubKey, "hex") : potSignerPublicKeyRawV08;
   const content = args.content !== undefined ? Buffer.from(args.content, "utf8") : undefined;
 
-  const result = verifyPotRecordV08(record, ctxId, issuerPubKey, content);
+  const requireFreshness = requiredFlag("TTTPS_REQUIRE_V08_FRESHNESS");
+  const freshness = configuredFreshnessPolicy();
+  if (requireFreshness && freshness === undefined) {
+    return serialize({ verdict: "rejected", reason: "freshness policy is not configured", ctxId, verifiedAt: Date.now() });
+  }
+
+  const result = verifyPotRecordV08(record, ctxId, issuerPubKey, content, freshness);
+  if (result.verdict === "rejected") {
+    return serialize({
+      verdict: result.verdict,
+      reason: result.reason ?? null,
+      payloadDigestMatchesContent: result.payloadDigestMatchesContent ?? null,
+      ctxId,
+      verifiedAt: Date.now(),
+    });
+  }
+
+  let replayClaim: "claimed" | "replay" | "unavailable" | "not_required" = "not_required";
+  if (requiredFlag("TTTPS_REQUIRE_REPLAY_LEDGER")) {
+    const decoded = decodePotRecordV08(record);
+    replayClaim = await claimV08Replay(args.clientId ?? "", args.sessionId ?? "", decoded.nonce.toString("hex"));
+    if (replayClaim !== "claimed") {
+      return serialize({
+        verdict: "rejected",
+        reason: replayClaim === "replay" ? "replay detected" : "replay ledger unavailable",
+        replayClaim,
+        ctxId,
+        verifiedAt: Date.now(),
+      });
+    }
+  }
 
   return serialize({
     verdict: result.verdict,
     reason: result.reason ?? null,
     payloadDigestMatchesContent: result.payloadDigestMatchesContent ?? null,
+    replayClaim,
     ctxId,
     verifiedAt: Date.now(),
   });

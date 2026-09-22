@@ -7,8 +7,12 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createServer } from "http";
+import { createServer as createHttpsServer } from "https";
+import { readFileSync } from "fs";
+import { extractTls13Exporter } from "./tls_exporter";
+import { withTransportBinding } from "./transport_context";
 import { z } from "zod";
-import { potGenerate, potVerify, potVerifyV08, potQuery, potGraph, potStats, potHealth, potCheckpoint, restoreDagEntry, redis, tttsFreshnessSeal } from "./tools";
+import { potGenerate, potGenerateV2, potVerify, potVerifyV2, potVerifyV08, potQuery, potGraph, potStats, potHealth, potCheckpoint, restoreDagEntry, redis, tttsFreshnessSeal } from "./tools";
 import { checkRateLimit, resolveApiKey } from "./auth";
 import { FREE_TIER_UPGRADE_MESSAGE, UPGRADE_URL, QuotaExceededError } from "./server";
 
@@ -198,15 +202,51 @@ function buildMcpServer(): McpServer {
   );
 
   s.tool(
+    "pot_generate_v2",
+    "Generate the draft-11 180-octet Proof-of-Time Record v2 core. TLS binding proof is computed only after a live TLS session exists.",
+    {
+      tsTaiUs: z.string().describe("TAI timestamp in microseconds as a decimal string"),
+      dispersionUs: z.number().int().nonnegative().describe("Uncertainty bound in microseconds"),
+      ctxId: z.string().length(32).describe("16-octet context identifier encoded as hex"),
+      holderAuthData: z.string().length(64).describe("32-octet holder public key or PSK digest encoded as hex"),
+      holderAuthType: z.number().int().optional().describe("0x01 Ed25519 holder key (default) or 0x02 shared secret"),
+    },
+    { title: "Generate draft-11 180-octet PoT v2", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    async (args) => {
+      try { return toolSuccess(await potGenerateV2(args)); } catch (err: unknown) { return toolError(err); }
+    }
+  );
+
+  s.tool(
+    "pot_verify_v2",
+    "Verify the draft-11 180-octet PoT Record v2 core. Binding-required mode fails closed in stdio because no TLS exporter session exists.",
+    {
+      potRecordV2: z.string().length(360).describe("Hex-encoded 180-octet draft-11 v2 record"),
+      issuerPubKey: z.string().length(64).optional().describe("Raw 32-octet issuer Ed25519 public key in hex"),
+      nowTaiUs: z.string().optional().describe("Current TAI timestamp in microseconds"),
+      maxSkewUs: z.string().optional().describe("Configured freshness allowance in microseconds"),
+      clientId: z.string().optional(),
+      sessionId: z.string().optional(),
+      bindingProof: z.string().regex(/^(?:[0-9a-fA-F]{128}|[0-9a-fA-F]{64})$/).optional().describe("64-octet Ed25519 or 32-octet HMAC TLS binding proof"),
+    },
+    { title: "Verify draft-11 180-octet PoT v2", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    async (args) => {
+      try { return toolSuccess(await potVerifyV2(args)); } catch (err: unknown) { return toolError(err); }
+    }
+  );
+
+  s.tool(
     "pot_verify_v08",
-    "Verify a draft-helmprotocol-tttps-08 §3 Proof-of-Time record (as produced by pot_generate's potRecordV08 field): recomputes the Commitment and checks the Ed25519 signature, and — if content is supplied — recomputes SHA-256(content) and checks it against the record's Payload Digest field.",
+    "Verify and, when configured, admit a draft-helmprotocol-tttps-08 §3 Proof-of-Time record: recomputes the Commitment and Ed25519 signature, applies configured freshness, and atomically claims client/session/nonce in Redis before admission.",
     {
       potRecordV08: z.string().describe("Hex-encoded 184 or 216-octet record from pot_generate's potRecordV08 field"),
       ctxId: z.string().max(255).optional().describe("Context identifier the record was generated under. Must match what pot_generate used, or verification fails."),
       issuerPubKey: z.string().optional().describe("Hex-encoded 32-byte raw Ed25519 issuer public key. Defaults to this server's own key."),
       content: z.string().optional().describe("The payload (utf8) to check against the record's Payload Digest field, if available"),
+      clientId: z.string().optional().describe("Stable caller identity for the durable replay ledger when TTTPS_REQUIRE_REPLAY_LEDGER=1"),
+      sessionId: z.string().optional().describe("Active transport/session identifier for the durable replay ledger when TTTPS_REQUIRE_REPLAY_LEDGER=1"),
     },
-    { title: "Verify draft-08 Proof-of-Time Record", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    { title: "Verify draft-08 Proof-of-Time Record", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     async (args) => {
       try {
         const result = await potVerifyV08(args);
@@ -319,7 +359,7 @@ async function main() {
 
   if (port) {
     // HTTP mode — per-request McpServer + transport (stateless, no reuse)
-    const httpServer = createServer(async (req, res) => {
+    const requestHandler = async (req: import("http").IncomingMessage, res: import("http").ServerResponse) => {
       // Health check for Docker/Glama container probes
       if (req.method === "GET" && (req.url === "/health" || req.url === "/ping")) {
         res.writeHead(200, { "Content-Type": "application/json" });
@@ -386,10 +426,22 @@ async function main() {
           res.end(JSON.stringify({ error: "Internal server error" }));
         }
       }
-    });
+    };
+
+    const certFile = process.env.MCP_TLS_CERT_FILE?.trim();
+    const keyFile = process.env.MCP_TLS_KEY_FILE?.trim();
+    if ((certFile && !keyFile) || (!certFile && keyFile)) {
+      throw new Error("MCP_TLS_CERT_FILE and MCP_TLS_KEY_FILE must be configured together");
+    }
+    const httpServer = certFile && keyFile
+      ? createHttpsServer({ minVersion: "TLSv1.3", cert: readFileSync(certFile), key: readFileSync(keyFile) }, (req, res) => {
+          const exporter = extractTls13Exporter(req);
+          return withTransportBinding({ exporter, clientId: String(req.headers["x-ttt-client-id"] ?? ""), sessionId: String(req.headers["x-ttt-session-id"] ?? "") }, () => requestHandler(req, res));
+        })
+      : createServer((req, res) => withTransportBinding({ clientId: String(req.headers["x-ttt-client-id"] ?? ""), sessionId: String(req.headers["x-ttt-session-id"] ?? "") }, () => requestHandler(req, res)));
 
     httpServer.listen(port, () => {
-      console.error(`[ttt-mcp] OpenTTT MCP Server (HTTP) on port ${port}`);
+      console.error(`[ttt-mcp] OpenTTT MCP Server (${certFile ? "HTTPS/TLS1.3" : "HTTP"}) on port ${port}`);
     });
   } else {
     // stdio mode for npx/Claude Desktop usage
