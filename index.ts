@@ -147,8 +147,11 @@ function toolSuccess(result: unknown): { content: { type: "text"; text: string }
 
 function buildMcpServer(): McpServer {
   const s = new McpServer({ name: "ttt-mcp", version: "0.3.2" });
+  // MCP SDK tool overloads can exceed TypeScript instantiation depth in clean CI installs.
+  // Runtime registration remains the SDK method; this local boundary keeps the published build deterministic.
+  const registerTool: any = s.tool.bind(s);
 
-  s.tool(
+  registerTool(
     "pot_generate",
     "Generate a cryptographic Proof of Time timestamp (draft-helmprotocol-tttps, https://datatracker.ietf.org/doc/draft-helmprotocol-tttps/). For Claude Code workflows: use eventId + prevEventId to build a causal chain. For DeFi: use txHash + chainId + poolAddress. For a spec-conformant draft-08 §3 record binding this attestation to a specific piece of content, also supply contentDigest. One of eventId, txHash, or contentDigest is required.",
     {
@@ -171,7 +174,7 @@ function buildMcpServer(): McpServer {
         .describe("draft-08 §3.3 context identifier (domain separator for the Commitment). Defaults to a fixed server value if omitted; MAY be public."),
     },
     { title: "Generate Proof of Time", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
-    async (args) => {
+    async (args: any) => {
       try {
         const result = await potGenerate(args);
         return toolSuccess(result);
@@ -181,7 +184,7 @@ function buildMcpServer(): McpServer {
     }
   );
 
-  s.tool(
+  registerTool(
     "pot_verify",
     "Verify a Proof of Time using its hash and integrity shards. Returns validity, mode (turbo/full), and timestamp.",
     {
@@ -191,7 +194,7 @@ function buildMcpServer(): McpServer {
       poolAddress: z.string().describe("Uniswap V4 pool address (0x-prefixed)"),
     },
     { title: "Verify Proof of Time", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    async (args) => {
+    async (args: any) => {
       try {
         const result = await potVerify(args);
         return toolSuccess(result);
@@ -201,7 +204,7 @@ function buildMcpServer(): McpServer {
     }
   );
 
-  s.tool(
+  registerTool(
     "pot_generate_v2",
     "Generate the draft-11 180-octet Proof-of-Time Record v2 core. TLS binding proof is computed only after a live TLS session exists.",
     {
@@ -212,12 +215,12 @@ function buildMcpServer(): McpServer {
       holderAuthType: z.number().int().optional().describe("0x01 Ed25519 holder key (default) or 0x02 shared secret"),
     },
     { title: "Generate draft-11 180-octet PoT v2", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
-    async (args) => {
+    async (args: any) => {
       try { return toolSuccess(await potGenerateV2(args)); } catch (err: unknown) { return toolError(err); }
     }
   );
 
-  s.tool(
+  registerTool(
     "pot_verify_v2",
     "Verify the draft-11 180-octet PoT Record v2 core. Binding-required mode fails closed in stdio because no TLS exporter session exists.",
     {
@@ -230,12 +233,12 @@ function buildMcpServer(): McpServer {
       bindingProof: z.string().regex(/^(?:[0-9a-fA-F]{128}|[0-9a-fA-F]{64})$/).optional().describe("64-octet Ed25519 or 32-octet HMAC TLS binding proof"),
     },
     { title: "Verify draft-11 180-octet PoT v2", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
-    async (args) => {
+    async (args: any) => {
       try { return toolSuccess(await potVerifyV2(args)); } catch (err: unknown) { return toolError(err); }
     }
   );
 
-  s.tool(
+  registerTool(
     "pot_verify_v08",
     "Verify and, when configured, admit a draft-helmprotocol-tttps-08 §3 Proof-of-Time record: recomputes the Commitment and Ed25519 signature, applies configured freshness, and atomically claims client/session/nonce in Redis before admission.",
     {
@@ -247,7 +250,7 @@ function buildMcpServer(): McpServer {
       sessionId: z.string().optional().describe("Active transport/session identifier for the durable replay ledger when TTTPS_REQUIRE_REPLAY_LEDGER=1"),
     },
     { title: "Verify draft-08 Proof-of-Time Record", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
-    async (args) => {
+    async (args: any) => {
       try {
         const result = await potVerifyV08(args);
         return toolSuccess(result);
@@ -257,7 +260,7 @@ function buildMcpServer(): McpServer {
     }
   );
 
-  s.tool(
+  registerTool(
     "pot_query",
     "Query Proof of Time records. Use eventId for exact O(1) lookup of a specific workflow step (collision probability 2^-256). Use startTime/endTime for time-range queries.",
     {
@@ -267,7 +270,7 @@ function buildMcpServer(): McpServer {
       limit: z.number().optional().describe("Max entries to return. Default: 100, max: 1000"),
     },
     { title: "Query Proof of Time Records", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    async (args) => {
+    async (args: any) => {
       try {
         const result = await potQuery(args);
         return toolSuccess(result);
@@ -277,7 +280,7 @@ function buildMcpServer(): McpServer {
     }
   );
 
-  s.tool(
+  registerTool(
     "pot_graph",
     "Traverse the causal chain of workflow steps. Given an eventId, returns the full backward chain (ancestors via prevEventId) and forward chain (steps that follow). Use after context compression to reconstruct the complete workflow timeline.",
     {
@@ -285,7 +288,7 @@ function buildMcpServer(): McpServer {
       depth: z.number().optional().describe("Max backward traversal depth. Default: 10, max: 100"),
     },
     { title: "Traverse PoT Causal Chain", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    async (args) => {
+    async (args: any) => {
       try {
         const result = await potGraph(args);
         return toolSuccess(result);
@@ -295,12 +298,12 @@ function buildMcpServer(): McpServer {
     }
   );
 
-  s.tool(
+  registerTool(
     "pot_stats",
     "Get PoT statistics: total swaps, turbo/full counts, and turbo ratio for a given period.",
     { period: z.enum(["day", "week", "month"]).describe("Time period for statistics") },
     { title: "PoT Statistics", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    async (args) => {
+    async (args: any) => {
       try {
         const result = await potStats(args);
         return toolSuccess(result);
@@ -310,7 +313,7 @@ function buildMcpServer(): McpServer {
     }
   );
 
-  s.tool(
+  registerTool(
     "pot_health",
     "Check PoT system health: time source status, subgraph sync, server uptime, and current mode.",
     {},
@@ -325,7 +328,7 @@ function buildMcpServer(): McpServer {
     }
   );
 
-  s.tool(
+  registerTool(
     "pot_checkpoint",
     "Create a compressed rollup checkpoint of workflow history. Call this periodically to prevent token explosion when recovering from context compression. Returns checkpointId, compressed event history, chainIntact status, and nextCheckpointHint (recommended events before next checkpoint).",
     {
@@ -336,7 +339,7 @@ function buildMcpServer(): McpServer {
       maxTokens: z.number().optional().describe("Approximate max tokens for rollup (default: 2000)"),
     },
     { title: "Create PoT Checkpoint", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
-    async (args) => {
+    async (args: any) => {
       try {
         const result = await potCheckpoint(args);
         return toolSuccess(result);
