@@ -70,5 +70,8 @@
     "ts-jest": "^29.4.11",
     "typescript": "^5.3.3"
   },
-  "mcpName": "io.github.Helm-Protocol/openttt-pot"
+  "mcpName": "io.github.Helm-Protocol/openttt-pot",
+  "publishConfig": {
+    "access": "public"
+  }
 }
