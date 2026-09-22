@@ -1,10 +1,10 @@
 {
   "name": "@helm-protocol/ttt-mcp",
-  "version": "0.3.4",
-  "description": "Proof-of-Time attestation \u2014 Ed25519-signed timestamps with multi-source corroboration and explicit error bounds. IETF draft-helmprotocol-tttps",
+  "version": "0.4.0",
+  "description": "Proof-of-Time attestation — Ed25519-signed timestamps with multi-source corroboration and explicit error bounds. IETF draft-helmprotocol-tttps",
   "main": "dist/index.js",
   "bin": {
-    "ttt-mcp": "./dist/index.js"
+    "ttt-mcp": "dist/index.js"
   },
   "files": [
     "dist",
@@ -50,7 +50,7 @@
   "license": "BSL-1.1",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Helm-Protocol/openttt-mcp"
+    "url": "git+https://github.com/Helm-Protocol/openttt-mcp.git"
   },
   "homepage": "https://github.com/Helm-Protocol/openttt-mcp#readme",
   "engines": {
