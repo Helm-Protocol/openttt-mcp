@@ -1,4 +1,4 @@
-name: Publish package and MCP server
+name: Publish npm package
 
 on:
   push:
@@ -14,28 +14,16 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
           package-manager-cache: false
+      - name: Upgrade npm for Trusted Publishing
+        run: npm install --global npm@latest --force
+      - run: npm --version
       - run: npm ci
       - run: npm run build
       - run: npm test -- --runInBand
       - run: npm run typecheck
       - run: npm publish --access public
-
-  publish-mcp-registry:
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install mcp-publisher
-        run: |
-          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
-      - name: Login via GitHub OIDC
-        run: ./mcp-publisher login github-oidc
-      - name: Publish server.json
-        run: ./mcp-publisher publish
