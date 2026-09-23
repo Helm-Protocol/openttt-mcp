@@ -2,6 +2,11 @@
 
 All notable changes to `@helm-protocol/ttt-mcp` are documented here.
 
+## [0.4.4] - 2026-09-23
+
+### Fixed — rate-limit IP spoofing
+- The per-IP / per-minute limits no longer trust the client-supplied `X-Forwarded-For` header by default; the socket peer address is authoritative unless deployed behind a trusted reverse proxy (`TTTPS_TRUST_PROXY=1`). Closes a Flood-control bypass where an attacker varied the header to dodge the limit.
+
 ## [0.4.3] - 2026-09-23
 
 ### Changed — secure-by-default admission
