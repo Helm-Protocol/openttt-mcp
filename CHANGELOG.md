@@ -2,6 +2,14 @@
 
 All notable changes to `@helm-protocol/ttt-mcp` are documented here.
 
+## [0.4.3] - 2026-09-23
+
+### Changed — secure-by-default admission
+- **Freshness enforcement and self-issuer pinning are now ON by default** (opt out with `TTTPS_ENFORCE_FRESHNESS=0` / `TTTPS_PIN_SELF_ISSUER=0`). A stale but validly-signed record, or a record signed under a caller-supplied issuer key, is now rejected without any extra configuration — closing the two "still intact" gaps an external audit found in the default `0.4.1` verify path. Cross-issuer federation now requires an explicit `TTTPS_TRUSTED_ISSUERS` allowlist.
+
+### Added
+- **Per-minute burst limit** (`FREE_TIER_PER_MIN`, default 120/min per IP, HTTP mode) returning 429 — gate-layer Flood control. Volumetric DDoS remains an infrastructure concern.
+
 ## [0.4.2] - 2026-09-23
 
 ### Changed

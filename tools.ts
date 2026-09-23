@@ -640,7 +640,7 @@ async function potVerifyV2Core(args: {
 
   // Freshness: when enforced, the SERVER decides now + tolerance; caller-supplied
   // nowTaiUs/maxSkewUs are ignored so an attacker cannot choose the clock.
-  const freshness = process.env.TTTPS_ENFORCE_FRESHNESS === "1"
+  const freshness = process.env.TTTPS_ENFORCE_FRESHNESS !== "0"
     ? { nowTaiUs: BigInt(Date.now()) * 1000n, maxSkewUs: BigInt(process.env.TTTPS_MAX_SKEW_US ?? "60000000") }
     : (args.nowTaiUs !== undefined && args.maxSkewUs !== undefined
         ? { nowTaiUs: BigInt(args.nowTaiUs), maxSkewUs: BigInt(args.maxSkewUs) }
@@ -649,7 +649,7 @@ async function potVerifyV2Core(args: {
   // Issuer trust: when a trusted issuer set is pinned, the caller-supplied
   // issuerPubKey is IGNORED and the signature must verify against a pinned key.
   const trustedIssuers = trustedKeyList("TTTPS_TRUSTED_ISSUERS");
-  const pinSelfIssuer = process.env.TTTPS_PIN_SELF_ISSUER === "1";
+  const pinSelfIssuer = process.env.TTTPS_PIN_SELF_ISSUER !== "0";
   const candidates = trustedIssuers.length > 0
     ? trustedIssuers
     : pinSelfIssuer

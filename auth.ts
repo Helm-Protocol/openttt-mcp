@@ -9,6 +9,11 @@ import * as path from "path";
 import * as os from "os";
 
 export const FREE_TIER_LIMIT = parseInt(process.env.FREE_TIER_LIMIT ?? "100", 10);
+// Flood / burst control: max requests per rolling minute per IP (HTTP mode).
+// A gate-layer defense against request-rate abuse; volumetric DDoS is an
+// infrastructure concern (nginx / cloud), not this counter. Set 0 to disable.
+export const FREE_TIER_PER_MIN = parseInt(process.env.FREE_TIER_PER_MIN ?? "120", 10);
+const perMinBuckets = new Map<string, { count: number; resetAt: number }>();
 
 const USAGE_DIR = path.join(os.homedir(), ".ttt-mcp");
 const USAGE_FILE = path.join(USAGE_DIR, "usage.json");
@@ -83,7 +88,21 @@ export function checkRateLimit(
     return { allowed: true, remaining: FREE_TIER_LIMIT - entry.count, tier: "free" };
   }
 
-  // HTTP mode: in-memory bucket
+  // HTTP mode: per-minute burst limit first (Flood control).
+  if (FREE_TIER_PER_MIN > 0) {
+    const mk = `ip:${clientIp}`;
+    let m = perMinBuckets.get(mk);
+    if (!m || now >= m.resetAt) {
+      m = { count: 0, resetAt: now + 60_000 };
+      perMinBuckets.set(mk, m);
+    }
+    m.count += 1;
+    if (m.count > FREE_TIER_PER_MIN) {
+      return { allowed: false, remaining: 0, tier: "free" };
+    }
+  }
+
+  // HTTP mode: in-memory daily bucket
   const bucketKey = `ip:${clientIp}`;
   let entry = buckets.get(bucketKey);
   if (!entry || now >= entry.resetAt) {
