@@ -47,3 +47,23 @@ curl -k --tlsv1.3 -X POST https://api.kenosian.com:8443/mcp \
 - 정직 경계: 토큰 바이트/세션/시간/발급자/재사용은 라이브 방어됨. **도구 인자(송금액·대상) 변조**는
   별도 action-binding(ctx_id↔요청 해시) 계층이며 이번 범위에 미포함 — 그 공격은 "다음 계층"으로 소개.
 - 볼류메트릭 DDoS는 인프라 계층(게이트는 분당 429까지).
+
+## 🖥️ Morandi 라이브 게이트 데모 (argument-binding + DB 전후 해시) — 진짜 crypto
+파일: `demo/gate_challenge.mjs` (게시 패키지의 pot_record_v2 실함수 사용, 시뮬 0).
+```
+# 좌측 대형화면(대시보드) + 참가자 페이지 동시 서빙
+DEMO_PORT=8090 DEMO_PUBLIC_URL="http://<노트북_IP>:8090" node demo/gate_challenge.mjs
+#   대시보드  http://<노트북_IP>:8090/        (좌측 화면)
+#   챌린지    http://<노트북_IP>:8090/go       (이 URL을 QR로 → 우측 화면/관객 폰)
+```
+관객 플로우: QR 스캔 → /go 에서 **본인 임시 토큰 자동 발급**(TTT-MCP 임의 사용자, 매 로드 새 nonce) + Fable 에이전트 프롬프트/curl 복사 → 본인 에이전트에 "이 토큰으로 상대 DB 오염시켜봐" → 좌측 대시보드에 **공격자 IP · req_id · 거부사유 · 실측 지연 · DB해시 before→after(불변)** 실시간.
+
+실측 검증(로컬):
+```
+정상 amount=500     ALLOW    DB 9620…→6459…   2.2ms
+재전송              REJECT   REPLAY_LEDGER_CLAIMED    DB 6459…=6459…  0.9ms
+송금액 500000 조작   REJECT   ARGUMENT_BINDING_FAIL   DB 6459…=6459…  0.9ms  ← 핵심
+토큰 1바이트 변조    REJECT   ISSUER_SIGNATURE_INVALID DB 6459…=6459… 0.6ms
+```
+거부는 전부 DB 해시 불변(state_drift:false). 지연은 performance.now 실측(하드코딩 15ms 아님).
+정직 경계: 이 데모 게이트는 argument-binding+DB 무결성을 실증. TLS-exporter 세션바인딩은 api.kenosian.com:8443 실 MCP + Node eve 클라이언트로 별도 시연.
