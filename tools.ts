@@ -585,22 +585,30 @@ function trustedKeyList(envName: string): Buffer[] {
     .map((h) => Buffer.from(h, "hex"));
 }
 
-// Cached read of the openttt-server Roughtime quorum health (draft-11 admission).
-let roughtimeAdmitCache: { ok: boolean; at: number } | null = null;
-async function roughtimeQuorumOk(): Promise<boolean> {
+// Cached read of the openttt-server Roughtime D-chain quorum health (draft-11 admission).
+// Requires chain_valid (roughtime_ok AND a non-zero multi-source D-chain digest), so a
+// single reachable time source cannot satisfy admission — this is the Sybil / GPS / NTP
+// time-source resistance surfaced from the server's unique-quorum chain probe.
+let roughtimeAdmitCache: { ok: boolean; digest: string; at: number } | null = null;
+async function roughtimeChainStatus(): Promise<{ ok: boolean; digest: string }> {
   const url = process.env.TTTPS_ADMISSION_STATUS_URL ?? "https://api.kenosian.com/pot/status";
   const ttlMs = Number.parseInt(process.env.TTTPS_ADMISSION_TTL_MS ?? "5000", 10);
-  if (roughtimeAdmitCache && Date.now() - roughtimeAdmitCache.at < ttlMs) return roughtimeAdmitCache.ok;
+  if (roughtimeAdmitCache && Date.now() - roughtimeAdmitCache.at < ttlMs) {
+    return { ok: roughtimeAdmitCache.ok, digest: roughtimeAdmitCache.digest };
+  }
   try {
     const timeoutMs = Number.parseInt(process.env.TTTPS_ADMISSION_TIMEOUT_MS ?? "1500", 10);
     const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
-    const j = (await res.json()) as { roughtime_ok?: boolean };
-    const ok = j?.roughtime_ok === true;
-    roughtimeAdmitCache = { ok, at: Date.now() };
-    return ok;
+    const j = (await res.json()) as { roughtime_ok?: boolean; chain_valid?: boolean; d_chain_digest?: string };
+    // Prefer chain_valid (integrity+quorum) when the server exposes it; fall back to
+    // roughtime_ok for older servers.
+    const ok = j?.chain_valid === true || (j?.chain_valid === undefined && j?.roughtime_ok === true);
+    const digest = typeof j?.d_chain_digest === "string" ? j.d_chain_digest : "";
+    roughtimeAdmitCache = { ok, digest, at: Date.now() };
+    return { ok, digest };
   } catch {
-    roughtimeAdmitCache = { ok: false, at: Date.now() };
-    return false;
+    roughtimeAdmitCache = { ok: false, digest: "", at: Date.now() };
+    return { ok: false, digest: "" };
   }
 }
 
@@ -624,8 +632,9 @@ async function potVerifyV2Core(args: {
   // quorum holds on openttt-server. Degraded time consensus (GPS/NTP manipulation,
   // source loss) fails closed. Verdict reason surfaces to the war room.
   if (process.env.TTTPS_REQUIRE_ROUGHTIME_QUORUM === "1") {
-    if (!(await roughtimeQuorumOk())) {
-      return serialize({ verdict: "rejected", reason: "roughtime quorum unavailable" });
+    const chain = await roughtimeChainStatus();
+    if (!chain.ok) {
+      return serialize({ verdict: "rejected", reason: "roughtime chain quorum unavailable" });
     }
   }
 
