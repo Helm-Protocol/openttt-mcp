@@ -55,9 +55,12 @@ let bobRecordHex = mintBob();
 
 const replay = new Set();
 const clients = new Set(); // SSE
+const eventHistory = [];
 let stats = { total: 0, allow: 0, reject: 0, byReason: new Map(), lat: [] };
 
 function emit(ev) {
+  eventHistory.push(ev);
+  if (eventHistory.length > 500) eventHistory.shift();
   const line = `data: ${JSON.stringify(ev)}\n\n`;
   for (const res of clients) { try { res.write(line); } catch { /* drop */ } }
 }
@@ -236,7 +239,7 @@ const server = http.createServer((req, res) => {
   }
   if (req.method === "GET" && url === "/events") {
     res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
-    res.write(":\n\n"); clients.add(res); req.on("close", () => clients.delete(res)); return;
+    res.write(":\n\n"); for (const ev of eventHistory) res.write(`data: ${JSON.stringify(ev)}\n\n`); clients.add(res); req.on("close", () => clients.delete(res)); return;
   }
   if (req.method === "POST" && url === "/mcp/db-write") {
     let b = ""; req.on("data", (c) => (b += c)); req.on("end", () => {
