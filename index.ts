@@ -439,9 +439,9 @@ async function main() {
     const httpServer = certFile && keyFile
       ? createHttpsServer({ minVersion: "TLSv1.3", cert: readFileSync(certFile), key: readFileSync(keyFile) }, (req, res) => {
           const exporter = extractTls13Exporter(req);
-          return withTransportBinding({ exporter, clientId: String(req.headers["x-ttt-client-id"] ?? ""), sessionId: String(req.headers["x-ttt-session-id"] ?? "") }, () => requestHandler(req, res));
+          return withTransportBinding({ exporter, remoteAddress: req.socket.remoteAddress ?? "", clientId: String(req.headers["x-ttt-client-id"] ?? ""), sessionId: String(req.headers["x-ttt-session-id"] ?? "") }, () => requestHandler(req, res));
         })
-      : createServer((req, res) => withTransportBinding({ clientId: String(req.headers["x-ttt-client-id"] ?? ""), sessionId: String(req.headers["x-ttt-session-id"] ?? "") }, () => requestHandler(req, res)));
+      : createServer((req, res) => withTransportBinding({ remoteAddress: req.socket.remoteAddress ?? "", clientId: String(req.headers["x-ttt-client-id"] ?? ""), sessionId: String(req.headers["x-ttt-session-id"] ?? "") }, () => requestHandler(req, res)));
 
     httpServer.listen(port, () => {
       console.error(`[ttt-mcp] OpenTTT MCP Server (${certFile ? "HTTPS/TLS1.3" : "HTTP"}) on port ${port}`);

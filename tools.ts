@@ -573,7 +573,7 @@ export async function potGenerateV2(args: {
   });
 }
 
-export async function potVerifyV2(args: {
+async function potVerifyV2Core(args: {
   potRecordV2: string;
   issuerPubKey?: string;
   nowTaiUs?: string;
@@ -612,6 +612,46 @@ export async function potVerifyV2(args: {
     if (replay !== "claimed") return serialize({ verdict: "rejected", reason: replay === "replay" ? "replay detected" : "replay ledger unavailable" });
   }
   return serialize({ verdict: "intact", wireProfile: "draft-helmprotocol-tttps-11-v2", nonce: result.nonce!.toString("hex") });
+}
+
+// ---------- draft-11 v2 verdict audit (server-measured latency + war-room feed) ----------
+// Every pot_verify_v2 verdict is appended to a Redis stream with the server's own timing.
+// Fire-and-forget: audit failure never changes the verdict. No secrets are written
+// (record digest prefix, ctx_id, nonce, verdict, reason, transport, latency only).
+const V2_AUDIT_STREAM = process.env.TTTPS_AUDIT_STREAM ?? "tttps:audit:v2";
+const V2_AUDIT_MAXLEN = Number.parseInt(process.env.TTTPS_AUDIT_MAXLEN ?? "100000", 10);
+
+export async function potVerifyV2(args: Parameters<typeof potVerifyV2Core>[0]): Promise<unknown> {
+  const startedNs = process.hrtime.bigint();
+  let result: Record<string, unknown>;
+  try {
+    result = (await potVerifyV2Core(args)) as Record<string, unknown>;
+  } catch (e) {
+    result = { verdict: "rejected", reason: `verifier exception: ${e instanceof Error ? e.message : String(e)}` };
+  }
+  const serverLatencyUs = Number((process.hrtime.bigint() - startedNs) / 1000n);
+  const binding = currentTransportBinding();
+  const recordHex = typeof args.potRecordV2 === "string" ? args.potRecordV2 : "";
+  const record = Buffer.from(recordHex, "hex");
+  const fields: Record<string, string> = {
+    ts_ms: String(Date.now()),
+    verdict: String(result.verdict ?? "unknown"),
+    reason: String(result.reason ?? ""),
+    case: String(args.clientId ?? binding?.clientId ?? ""),
+    session: String(args.sessionId ?? binding?.sessionId ?? ""),
+    remote: String(binding?.remoteAddress ?? ""),
+    transport: binding?.exporter ? "tls13" : "none",
+    binding_proof: args.bindingProof ? "present" : "absent",
+    record_len: String(record.length),
+    record_sha16: record.length ? createHash("sha256").update(record).digest("hex").slice(0, 16) : "",
+    ctx_id: record.length >= 48 ? record.subarray(16, 32).toString("hex") : "",
+    nonce: record.length >= 48 ? record.subarray(32, 48).toString("hex") : "",
+    latency_us: String(serverLatencyUs),
+  };
+  const flat: string[] = [];
+  for (const [k, v] of Object.entries(fields)) flat.push(k, v);
+  redis.call("XADD", V2_AUDIT_STREAM, "MAXLEN", "~", String(V2_AUDIT_MAXLEN), "*", ...flat).catch(() => undefined);
+  return serialize({ ...result, serverLatencyUs });
 }
 
 // ---------- Tool: pot_verify_v08 ----------

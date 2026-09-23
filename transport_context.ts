@@ -4,6 +4,7 @@ export interface TransportBindingContext {
   exporter?: (contextValue: Buffer) => Buffer;
   clientId?: string;
   sessionId?: string;
+  remoteAddress?: string;
 }
 
 const storage = new AsyncLocalStorage<TransportBindingContext>();
