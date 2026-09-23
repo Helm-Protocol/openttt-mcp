@@ -39,3 +39,25 @@ Until then only option B (same-LAN / localhost `--insecure`) works. DNS api.keno
 
 ## Rollback
 `sudo docker restart openttt-mcp-canary` (same image). Prior image tag unchanged; git revert 0493907 restores pre-demo server.
+
+
+## UPDATE 16:30 KST — Tier-2 draft-11 admission is LIVE on the canary
+Canary now runs with the full stack (rebuilt image `openttt-mcp:draft11-v2`):
+```
+sudo docker run -d --name openttt-mcp-canary --restart unless-stopped --network host \
+  -e PORT=8443 -e REDIS_URL=redis://127.0.0.1:6380 \
+  -e TTTPS_V2_REQUIRE_BINDING=1 -e TTTPS_REQUIRE_REPLAY_LEDGER=1 \
+  -e TTTPS_AUDIT_STREAM=tttps:audit:v2 -e FREE_TIER_LIMIT=100000 \
+  -e TTTPS_PIN_SELF_ISSUER=1 -e TTTPS_ENFORCE_FRESHNESS=1 -e TTTPS_MAX_SKEW_US=60000000 \
+  -e TTTPS_TRUSTED_HOLDERS=<BOB_PUBKEY> \
+  -e TTTPS_REQUIRE_ROUGHTIME_QUORUM=1 -e TTTPS_ADMISSION_STATUS_URL=https://api.kenosian.com/pot/status \
+  -e MCP_TLS_CERT_FILE=/run/tls/server.crt -e MCP_TLS_KEY_FILE=/run/tls/server.key \
+  -v /opt/buildday-tls:/run/tls:ro openttt-mcp:draft11-v2
+```
+`<BOB_PUBKEY>` = Bob's holder pubkey (from `/tmp/buildday/bob_holder_key.json` .pubRaw). Generate Bob once, then set this and restart.
+
+Attacks now (all BLOCKED live): `hijack tamper forge stale holder gap` via
+`node scripts/eve_attacks.mjs --host api.kenosian.com --port 8443` (add `--only <name>`).
+Honest verdicts + per-row matrix: docs/ATTACK_MATRIX_live_20260923.md.
+GPS/NTP demo: stopping the Roughtime quorum source makes the gate fail closed
+("roughtime quorum unavailable") — proven locally; do NOT stop prod Roughtime during the show.
