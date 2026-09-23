@@ -695,6 +695,38 @@ async function potVerifyV2Core(args: {
 const V2_AUDIT_STREAM = process.env.TTTPS_AUDIT_STREAM ?? "tttps:audit:v2";
 const V2_AUDIT_MAXLEN = Number.parseInt(process.env.TTTPS_AUDIT_MAXLEN ?? "100000", 10);
 
+// Formal-verification provenance for the admission state boundary.
+// TLA+ (model check) -> Lean 4 (kernel-checked theorems, sorry 0 / axiom propext)
+// -> this TypeScript parser. The receipt is anchored in kvault over a Roughtime chain.
+// Scope is deliberately narrow and stated honestly: it proves the 180-octet parse and
+// the "invalid ingress => zero state mutation" boundary, NOT cryptographic security of
+// Ed25519 / SHA-256 / the TLS exporter. Attached so the published package can point at
+// the proof rather than merely assert it. Suppress with TTTPS_EMIT_FORMAL_RECEIPT=0.
+const TTTPS_FORMAL_RECEIPT = {
+  spec: "draft-helmprotocol-tttps-11",
+  chain: "TLA+ (TLC model check) -> Lean 4 (kernel) -> TypeScript runtime",
+  lean: {
+    module: "KLean.TTTPS.Core",
+    theorems: [
+      "invalid_ingress_no_mutation",
+      "parse_is_deterministic",
+      "parsed_record_has_fixed_size",
+      "valid_ingress_commit_delta",
+      "zero_state_preservation",
+    ],
+    axioms: ["propext"],
+    content_hash: "sha256:6116b82318d540a1e4e5b694e31978739851f658356330349b9d4289aeb5bae8",
+  },
+  anchor: {
+    receipt_id: "33108706ed730e5296ae1b06",
+    time_source: "roughtime_chain",
+    verify_url: "https://kpp.kenosian.com/v1/verify?receipt_id=33108706ed730e5296ae1b06",
+  },
+  scope:
+    "Proves 180-octet parse + admission state boundary (invalid ingress => zero state mutation). " +
+    "Does NOT prove Ed25519/SHA-256/TLS-exporter cryptographic security.",
+} as const;
+
 export async function potVerifyV2(args: Parameters<typeof potVerifyV2Core>[0]): Promise<unknown> {
   const startedNs = process.hrtime.bigint();
   let result: Record<string, unknown>;
@@ -725,7 +757,8 @@ export async function potVerifyV2(args: Parameters<typeof potVerifyV2Core>[0]): 
   const flat: string[] = [];
   for (const [k, v] of Object.entries(fields)) flat.push(k, v);
   redis.call("XADD", V2_AUDIT_STREAM, "MAXLEN", "~", String(V2_AUDIT_MAXLEN), "*", ...flat).catch(() => undefined);
-  return serialize({ ...result, serverLatencyUs });
+  const emitFormal = process.env.TTTPS_EMIT_FORMAL_RECEIPT !== "0";
+  return serialize({ ...result, serverLatencyUs, ...(emitFormal ? { formal: TTTPS_FORMAL_RECEIPT } : {}) });
 }
 
 // ---------- Tool: pot_verify_v08 ----------

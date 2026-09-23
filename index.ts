@@ -262,7 +262,7 @@ function buildMcpServer(): McpServer {
 
   registerTool(
     "pot_query",
-    "Query Proof of Time records. Use eventId for exact O(1) lookup of a specific workflow step (collision probability 2^-256). Use startTime/endTime for time-range queries.",
+    "Query Proof of Time records. Use eventId for exact lookup of a specific workflow step. Use startTime/endTime for time-range queries.",
     {
       eventId: z.string().optional().describe("Exact eventId lookup — call this at workflow start to restore action history after context compression"),
       startTime: z.number().optional().describe("Start time (unix ms). Default: 24h ago"),
