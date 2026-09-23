@@ -146,7 +146,7 @@ function toolSuccess(result: unknown): { content: { type: "text"; text: string }
 }
 
 function buildMcpServer(): McpServer {
-  const s = new McpServer({ name: "ttt-mcp", version: "0.4.1" });
+  const s = new McpServer({ name: "ttt-mcp", version: "0.4.2" });
   // MCP SDK tool overloads can exceed TypeScript instantiation depth in clean CI installs.
   // Runtime registration remains the SDK method; this local boundary keeps the published build deterministic.
   const registerTool: any = s.tool.bind(s);
@@ -366,7 +366,7 @@ async function main() {
       // Health check for Docker/Glama container probes
       if (req.method === "GET" && (req.url === "/health" || req.url === "/ping")) {
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ status: "ok", server: "ttt-mcp", version: "0.4.1" }));
+        res.end(JSON.stringify({ status: "ok", server: "ttt-mcp", version: "0.4.2" }));
         return;
       }
       // Rate limiting — free tier: 100 calls/day per IP (HTTP mode only);

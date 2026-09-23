@@ -2,6 +2,12 @@
 
 All notable changes to `@helm-protocol/ttt-mcp` are documented here.
 
+## [0.4.2] - 2026-09-23
+
+### Changed
+- Admission now consumes `chain_valid` (roughtime_ok AND non-zero multi-source Roughtime D-chain digest) from the time authority's `/pot/status`, not just the boolean — a single reachable time source no longer satisfies admission (Sybil / GPS / NTP time-source resistance). Falls back to `roughtime_ok` for older servers.
+- `formal` receipt is now explicit that TLA+<->Lean<->runtime is provenance, not an end-to-end 1:1 machine proof (`binding_status`, `lean.abstraction`, `tla.method`, `revision`).
+
 ## [0.4.1] - 2026-09-23
 
 ### Added — draft-11 Tier-2 admission (all env-gated, default off; unchanged verdict path when unset)
