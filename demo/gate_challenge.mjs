@@ -22,6 +22,15 @@ const V2 = require(path.join(here, "..", "dist", "pot_record_v2.js"));
 const PORT = Number(process.env.DEMO_PORT ?? 8090);
 const PUBLIC_URL = process.env.DEMO_PUBLIC_URL ?? `http://localhost:${PORT}`;
 const MAX_SKEW_US = 600_000_000n; // 10 min
+const DEMO_RATE_PER_MIN = Number(process.env.DEMO_RATE_PER_MIN ?? 120);
+const demoRateBuckets = new Map();
+function demoRateAllowed(ip) {
+  const now = Date.now();
+  let b = demoRateBuckets.get(ip);
+  if (!b || now >= b.resetAt) { b = { count: 0, resetAt: now + 60000 }; demoRateBuckets.set(ip, b); }
+  b.count++;
+  return DEMO_RATE_PER_MIN <= 0 || b.count <= DEMO_RATE_PER_MIN;
+}
 
 // ---- issuer (server) + Bob holder, generated fresh at boot ----
 const issuer = crypto.generateKeyPairSync("ed25519");
@@ -86,6 +95,7 @@ function gate(body, clientIp) {
   let verdict = "ALLOW", reason = "valid";
   try {
     const { record_hex, action } = body;
+    if (!demoRateAllowed(clientIp || "?")) throw new Error("FLOOD");
     if (typeof record_hex !== "string") throw new Error("MALFORMED_REQUEST");
     const rec = Buffer.from(record_hex, "hex");
     if (rec.length !== 180) throw new Error("INVALID_FRAME_SIZE");
