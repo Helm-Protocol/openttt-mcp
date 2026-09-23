@@ -573,6 +573,37 @@ export async function potGenerateV2(args: {
   });
 }
 
+// ---------- draft-11 Tier-2 admission config (env-gated; all off by default) ----------
+// These wire openttt-server's draft-11 defenses into the MCP verify path so the
+// verdict reflects the full stack, not just local record crypto. Each is opt-in via
+// env so the published default behavior and the existing test suite are unchanged.
+function trustedKeyList(envName: string): Buffer[] {
+  return (process.env[envName] ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => /^[0-9a-fA-F]{64}$/.test(s))
+    .map((h) => Buffer.from(h, "hex"));
+}
+
+// Cached read of the openttt-server Roughtime quorum health (draft-11 admission).
+let roughtimeAdmitCache: { ok: boolean; at: number } | null = null;
+async function roughtimeQuorumOk(): Promise<boolean> {
+  const url = process.env.TTTPS_ADMISSION_STATUS_URL ?? "https://api.kenosian.com/pot/status";
+  const ttlMs = Number.parseInt(process.env.TTTPS_ADMISSION_TTL_MS ?? "5000", 10);
+  if (roughtimeAdmitCache && Date.now() - roughtimeAdmitCache.at < ttlMs) return roughtimeAdmitCache.ok;
+  try {
+    const timeoutMs = Number.parseInt(process.env.TTTPS_ADMISSION_TIMEOUT_MS ?? "1500", 10);
+    const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+    const j = (await res.json()) as { roughtime_ok?: boolean };
+    const ok = j?.roughtime_ok === true;
+    roughtimeAdmitCache = { ok, at: Date.now() };
+    return ok;
+  } catch {
+    roughtimeAdmitCache = { ok: false, at: Date.now() };
+    return false;
+  }
+}
+
 async function potVerifyV2Core(args: {
   potRecordV2: string;
   issuerPubKey?: string;
@@ -588,12 +619,55 @@ async function potVerifyV2Core(args: {
     return serialize({ verdict: "rejected", reason: "TLS exporter binding proof is required" });
   }
   const record = Buffer.from(args.potRecordV2, "hex");
-  const issuerPubKey = args.issuerPubKey ? Buffer.from(args.issuerPubKey, "hex") : potSignerPublicKeyRawV08;
-  const freshness = args.nowTaiUs !== undefined && args.maxSkewUs !== undefined
-    ? { nowTaiUs: BigInt(args.nowTaiUs), maxSkewUs: BigInt(args.maxSkewUs) }
-    : undefined;
-  const result = verifyPotRecordV2(record, issuerPubKey, freshness);
-  if (result.verdict === "rejected") return serialize(result);
+
+  // draft-11 admission: the gate admits only while a live multi-source Roughtime
+  // quorum holds on openttt-server. Degraded time consensus (GPS/NTP manipulation,
+  // source loss) fails closed. Verdict reason surfaces to the war room.
+  if (process.env.TTTPS_REQUIRE_ROUGHTIME_QUORUM === "1") {
+    if (!(await roughtimeQuorumOk())) {
+      return serialize({ verdict: "rejected", reason: "roughtime quorum unavailable" });
+    }
+  }
+
+  // Freshness: when enforced, the SERVER decides now + tolerance; caller-supplied
+  // nowTaiUs/maxSkewUs are ignored so an attacker cannot choose the clock.
+  const freshness = process.env.TTTPS_ENFORCE_FRESHNESS === "1"
+    ? { nowTaiUs: BigInt(Date.now()) * 1000n, maxSkewUs: BigInt(process.env.TTTPS_MAX_SKEW_US ?? "60000000") }
+    : (args.nowTaiUs !== undefined && args.maxSkewUs !== undefined
+        ? { nowTaiUs: BigInt(args.nowTaiUs), maxSkewUs: BigInt(args.maxSkewUs) }
+        : undefined);
+
+  // Issuer trust: when a trusted issuer set is pinned, the caller-supplied
+  // issuerPubKey is IGNORED and the signature must verify against a pinned key.
+  const trustedIssuers = trustedKeyList("TTTPS_TRUSTED_ISSUERS");
+  const pinSelfIssuer = process.env.TTTPS_PIN_SELF_ISSUER === "1";
+  const candidates = trustedIssuers.length > 0
+    ? trustedIssuers
+    : pinSelfIssuer
+      ? [potSignerPublicKeyRawV08]
+      : [args.issuerPubKey ? Buffer.from(args.issuerPubKey, "hex") : potSignerPublicKeyRawV08];
+  let result = verifyPotRecordV2(record, candidates[0], freshness);
+  for (let i = 1; i < candidates.length && result.verdict === "rejected" && result.reason === "issuer signature invalid"; i++) {
+    result = verifyPotRecordV2(record, candidates[i], freshness);
+  }
+  if (result.verdict === "rejected") {
+    if (trustedIssuers.length > 0 && result.reason === "issuer signature invalid") {
+      return serialize({ verdict: "rejected", reason: "issuer not trusted" });
+    }
+    return serialize(result);
+  }
+
+  // Holder authorization: optional allowlist of holder public keys (draft-11
+  // holder identity). A cryptographically valid record from an unlisted holder
+  // is admitted crypto-wise but not authorized.
+  const trustedHolders = trustedKeyList("TTTPS_TRUSTED_HOLDERS");
+  if (trustedHolders.length > 0) {
+    const holder = record.subarray(48, 80);
+    if (!trustedHolders.some((h) => h.equals(holder))) {
+      return serialize({ verdict: "rejected", reason: "holder not authorized" });
+    }
+  }
+
   if (args.bindingProof) {
     const exporter = currentTransportBinding()?.exporter;
     if (!exporter) return serialize({ verdict: "rejected", reason: "live TLS exporter unavailable" });

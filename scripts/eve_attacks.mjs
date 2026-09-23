@@ -78,11 +78,47 @@ const attacks = {
     const proof = crypto.sign(null, computeV2BindingInput(rec, out), holder.privateKey);
     const res = await verify(s, { potRecordV2: rec.toString("hex"), bindingProof: proof.toString("hex"), issuerPubKey: issuerPubRaw.toString("hex"), clientId: "eve", sessionId: "eve-gap" });
     s.close();
-    return line("GAP", "attacker's own issuer key (Tier-1 hole)", res);
+    return line("GAP", "attacker's own issuer key (Tier-2: issuer pin)", res);
+  },
+  // STALE) Legit-looking record but timestamped in the past. Tier-2 server freshness
+  //        (TTTPS_ENFORCE_FRESHNESS) rejects on the server's own clock.
+  stale: async () => {
+    const s = new Session({ host: HOST, port: PORT, insecure: INSECURE });
+    const holder = crypto.generateKeyPairSync("ed25519");
+    const holderPub = holder.publicKey.export({ format: "der", type: "spki" }).subarray(-32);
+    const gen = parseToolResult((await s.rpc("tools/call", { name: "pot_generate_v2", arguments: {
+      tsTaiUs: String((BigInt(Date.now()) - 3_600_000n) * 1000n), // 1 hour ago
+      dispersionUs: 100, ctxId: crypto.randomBytes(16).toString("hex"), holderAuthData: holderPub.toString("hex"), holderAuthType: 0x01,
+    } })).body);
+    if (!gen.tool?.potRecordV2) return line("STALE", "stale timestamp", { verdict: "?", reason: "gen failed" });
+    const rec = Buffer.from(gen.tool.potRecordV2, "hex");
+    const out = s.exporter(computeV2ExporterContext(rec));
+    const proof = crypto.sign(null, computeV2BindingInput(rec, out), holder.privateKey);
+    const res = await verify(s, { potRecordV2: gen.tool.potRecordV2, bindingProof: proof.toString("hex"), clientId: "eve", sessionId: "eve-stale" });
+    s.close();
+    return line("STALE", "1-hour-old timestamp", res);
+  },
+  // HOLDER) Eve's own holder key with a fully valid server-issued record + valid binding.
+  //         Tier-2 holder allowlist (TTTPS_TRUSTED_HOLDERS) rejects the unlisted holder.
+  holder: async () => {
+    const s = new Session({ host: HOST, port: PORT, insecure: INSECURE });
+    const holder = crypto.generateKeyPairSync("ed25519");
+    const holderPub = holder.publicKey.export({ format: "der", type: "spki" }).subarray(-32);
+    const gen = parseToolResult((await s.rpc("tools/call", { name: "pot_generate_v2", arguments: {
+      tsTaiUs: String(BigInt(Date.now()) * 1000n), dispersionUs: 100,
+      ctxId: crypto.randomBytes(16).toString("hex"), holderAuthData: holderPub.toString("hex"), holderAuthType: 0x01,
+    } })).body);
+    if (!gen.tool?.potRecordV2) return line("HOLDER", "unlisted holder", { verdict: "?", reason: "gen failed" });
+    const rec = Buffer.from(gen.tool.potRecordV2, "hex");
+    const out = s.exporter(computeV2ExporterContext(rec));
+    const proof = crypto.sign(null, computeV2BindingInput(rec, out), holder.privateKey);
+    const res = await verify(s, { potRecordV2: gen.tool.potRecordV2, bindingProof: proof.toString("hex"), clientId: "eve", sessionId: "eve-holder" });
+    s.close();
+    return line("HOLDER", "unauthorized holder identity", res);
   },
 };
 
 console.log(`\n── EVE (attacker) → https://${HOST}:${PORT}/mcp ─────────────`);
-const order = ONLY ? [ONLY] : ["hijack", "tamper", "forge", ...(GAP ? ["gap"] : [])];
+const order = ONLY ? [ONLY] : ["hijack", "tamper", "forge", "stale", "holder", ...(GAP ? ["gap"] : [])];
 for (const name of order) { if (attacks[name]) await attacks[name](); else console.log(`  unknown attack: ${name}`); }
 console.log("");
