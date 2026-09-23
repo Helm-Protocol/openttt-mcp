@@ -9,6 +9,7 @@
 // records the DB state hash before/after so rejected requests demonstrably leave it
 // unchanged. Latency is measured (performance.now), never fudged.
 import http from "node:http";
+import fs from "node:fs";
 import crypto from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { createRequire } from "node:module";
@@ -55,12 +56,23 @@ let bobRecordHex = mintBob();
 
 const replay = new Set();
 const clients = new Set(); // SSE
+const EVENT_LOG = process.env.DEMO_EVENT_LOG ?? "/home/axcpeter/.cache/ttt-gate-events.jsonl";
+const STATS_FILE = process.env.DEMO_STATS_FILE ?? "/home/axcpeter/.cache/ttt-gate-stats.json";
+fs.mkdirSync(path.dirname(EVENT_LOG), { recursive: true });
+fs.mkdirSync(path.dirname(STATS_FILE), { recursive: true });
 const eventHistory = [];
-let stats = { total: 0, allow: 0, reject: 0, byReason: new Map(), lat: [] };
+try {
+  const lines = fs.readFileSync(EVENT_LOG, "utf8").split("\n").filter(Boolean);
+  for (const line of lines.slice(-5000)) eventHistory.push(JSON.parse(line));
+} catch { /* first boot or unavailable log */ }
+let stats = { total: 0, allow: 0, reject: 0, drift: 0, byReason: new Map(), lat: [] };
+try { const saved = JSON.parse(fs.readFileSync(STATS_FILE, "utf8")); stats.total = saved.total || 0; stats.allow = saved.allow || 0; stats.reject = saved.reject || 0; stats.drift = saved.drift || 0; stats.byReason = new Map(Object.entries(saved.byReason || {})); stats.lat = Array.isArray(saved.lat) ? saved.lat.slice(-1000) : []; } catch { /* first boot */ }
+function persistStats() { try { fs.writeFileSync(STATS_FILE, JSON.stringify({ total: stats.total, allow: stats.allow, reject: stats.reject, drift: stats.drift, byReason: Object.fromEntries(stats.byReason), lat: stats.lat.slice(-1000) })); } catch { /* preserve live gate if stats storage is unavailable */ } }
 
 function emit(ev) {
   eventHistory.push(ev);
-  if (eventHistory.length > 500) eventHistory.shift();
+  try { fs.appendFileSync(EVENT_LOG, `${JSON.stringify(ev)}\n`); } catch { /* preserve live gate if log storage is unavailable */ }
+  if (eventHistory.length > 5000) eventHistory.shift();
   const line = `data: ${JSON.stringify(ev)}\n\n`;
   for (const res of clients) { try { res.write(line); } catch { /* drop */ } }
 }
@@ -100,6 +112,8 @@ function gate(body, clientIp) {
   stats.total++; if (verdict === "ALLOW") stats.allow++; else { stats.reject++; stats.byReason.set(reason, (stats.byReason.get(reason) ?? 0) + 1); }
   stats.lat.push(latencyMs);
   const ev = { reqId, verdict, reason, latencyMs, hBefore, hAfter, drift: hBefore !== hAfter, ip: clientIp || "?", attackers: attackerIps.size, ts: Date.now() };
+  if (ev.drift) stats.drift++;
+  persistStats();
   emit(ev);
   return ev;
 }
@@ -158,6 +172,8 @@ h1{font-weight:600;font-size:26px;margin:0 0 2px;letter-spacing:1px}
 <script>
 let allow=0,block=0,drift=0,reasons={},lat=[];
 const pct=(a,p)=>{if(!a.length)return null;const s=[...a].sort((x,y)=>x-y);return s[Math.min(s.length-1,Math.floor(p/100*s.length))]};
+const applyStats=(s)=>{allow=s.allow||0;block=s.reject||0;drift=s.drift||0;reasons=s.byReason||{};lat=s.lat||[];kAllow.textContent=allow;kBlock.textContent=block;kDrift.textContent=drift;document.getElementById('lat').innerHTML='p50 '+(pct(lat,50)??'—')+'ms · p99 '+(pct(lat,99)??'—')+'ms <span style="color:var(--sub)">(n='+lat.length+')</span>';const r=document.getElementById('reasons');r.innerHTML=Object.entries(reasons).sort((a,b)=>b[1]-a[1]).map(([k,v])=>'<div><span>'+k+'</span><span class="c">'+v+'</span></div>').join('')||'<div style="color:var(--sub)">—</div>';};
+fetch('/stats').then(r=>r.json()).then(applyStats);
 const es=new EventSource('/events');
 es.onmessage=(m)=>{const e=JSON.parse(m.data);
   if(e.verdict==='ALLOW')allow++;else{block++;reasons[e.reason]=(reasons[e.reason]||0)+1;if(e.drift)drift++;}
@@ -236,6 +252,10 @@ const server = http.createServer((req, res) => {
     const fresh = mintBob();
     res.writeHead(200, { "content-type": "application/json" });
     return res.end(JSON.stringify({ record_hex: fresh, action: BOB_ACTION, issuerPub: issuerPubRaw.toString("hex"), endpoint: `${PUBLIC_URL}/mcp/db-write` }));
+  }
+  if (req.method === "GET" && url === "/stats") {
+    res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+    return res.end(JSON.stringify({ total: stats.total, allow: stats.allow, reject: stats.reject, drift: stats.drift, byReason: Object.fromEntries(stats.byReason), lat: stats.lat }));
   }
   if (req.method === "GET" && url === "/events") {
     res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
