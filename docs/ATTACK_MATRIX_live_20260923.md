@@ -40,3 +40,24 @@ Roughtime 소스 차단 시(로컬 18444)      rejected  (roughtime quorum unava
 - #12/#13/Flood/ECC는 과장 금지 — 🟡/⬜/▫️ 그대로 화면표시.
 - 여전히 금지: "sub-ms"(실측 1.5~40ms), "13종 전부 프로덕션 100% 차단", "Lean sorryAx:0가 전 crypto 증명".
 - 가능: "draft-11 TLS1.3 exporter binding · issuer pin · server freshness · holder allowlist · Roughtime multi-source quorum admission · atomic replay ledger — 전부 게시 패키지가 라이브 호스트에서 실판정."
+
+## 부록 — "모든 공격루트 방어" 정직 판정 (2026-09-23 16:50, 0.4.1 기준)
+Jay 요청: 모든 공격을 현재 구현으로 방어. 실측 근거로 어디까지 참인지.
+
+**토큰 admission 게이트가 방어 가능한 루트 = 전부 라이브 방어됨** (canary/0.4.1, 전 실측 BLOCKED):
+- replay · forgery · tamper · cross-session(=BGP/DNS 재서명 포함) · protocol · freshness/drift · holder-Sybil · issuer-trust.
+
+**시간소스 Sybil / GPS / NTP** — 라이브 방어됨(간접, 근거 명시):
+- MCP는 `/pot/status roughtime_ok`을 admission 전제로 소비(fail-closed).
+- 그 boolean은 openttt-server `probe_chain_quorum_and_dchain()`(pot_service.rs:896-897)이 계산 = **≥QUORUM(2) 서로 다른 유효 Roughtime hop + D-chain digest**(roughtime_probe.rs:26,345,877). 즉 단일 시간소스 위조로는 quorum을 못 넘김 = 시간 Sybil 저항.
+- deep-space peer 투표는 admission.rs가 **물리엔티티 unique quorum**(unique_voters, disposition, required_quorum=roster/2+1)로 별도 방어.
+
+**아직 MCP가 리치하게 소비 못하는 것 (서버 노출 필요, 강화 항목)**:
+- D-chain digest(계산·저장되나 /pot/status 미노출) + unique-voter disposition → MCP가 boolean 넘어 무결성/정족수까지 판정하려면 openttt-server에 필드 추가 후 재배포 필요.
+
+**아키텍처상 이 패키지 범위 밖 (과장 금지)**:
+- 볼류메트릭 Flood/DDoS = 인프라 계층(레이트리밋만 있음, 부하내성 미측정).
+- ECC 오류정정 = 미구현(길이/무결성 거부만).
+- 순수 네트워크 경로 탈취(BGP/DNS) 자체 = crypto 거부로 무력화하되 경로제어는 범위 밖.
+
+정직 결론: **admission으로 막을 수 있는 공격은 현 구현이 라이브로 전부 막는다.** DDoS 부하·ECC는 별 계층이라 "100% 전부"로 광고하면 과장. D-chain digest 노출은 서버 재배포가 남은 강화점.
