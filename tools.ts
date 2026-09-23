@@ -704,7 +704,11 @@ const V2_AUDIT_MAXLEN = Number.parseInt(process.env.TTTPS_AUDIT_MAXLEN ?? "10000
 // the proof rather than merely assert it. Suppress with TTTPS_EMIT_FORMAL_RECEIPT=0.
 const TTTPS_FORMAL_RECEIPT = {
   spec: "draft-helmprotocol-tttps-11",
-  chain: "TLA+ (TLC model check) -> Lean 4 (kernel) -> TypeScript runtime",
+  // Honest status. There is a TLA+ model (TLC model-checked) and a Lean 4 module whose
+  // theorems the kernel accepts (sorry 0, axiom propext), and this runtime. They are
+  // RELATED artifacts, not a machine-checked end-to-end 1:1 equivalence. Treat this as
+  // provenance the auditor can chase, not proof of the byte parser or the cryptography.
+  binding_status: "provenance-only; TLA+<->Lean<->runtime 1:1 equivalence is NOT machine-checked end-to-end (HOLD)",
   lean: {
     module: "KLean.TTTPS.Core",
     theorems: [
@@ -716,15 +720,18 @@ const TTTPS_FORMAL_RECEIPT = {
     ],
     axioms: ["propext"],
     content_hash: "sha256:6116b82318d540a1e4e5b694e31978739851f658356330349b9d4289aeb5bae8",
+    abstraction: "models admission at frame-size (=180) granularity; does NOT model field offsets, Ed25519, SHA-256, or the TLS exporter",
   },
+  tla: { spec: "TTTPS_Ingress_Gate.tla", method: "TLC bounded model check (not an unbounded theorem)" },
   anchor: {
     receipt_id: "33108706ed730e5296ae1b06",
     time_source: "roughtime_chain",
     verify_url: "https://kpp.kenosian.com/v1/verify?receipt_id=33108706ed730e5296ae1b06",
   },
+  revision: { package_commit: "677a3b9", note: "live gate runs this revision with admission flags ON; published npm 0.4.0 bytes carry the v2 core only" },
   scope:
-    "Proves 180-octet parse + admission state boundary (invalid ingress => zero state mutation). " +
-    "Does NOT prove Ed25519/SHA-256/TLS-exporter cryptographic security.",
+    "Kernel-checks the 180-octet parse + admission state boundary (invalid ingress => zero state mutation). " +
+    "Does NOT prove Ed25519/SHA-256/TLS-exporter cryptographic security, nor a byte-exact parser equivalence.",
 } as const;
 
 export async function potVerifyV2(args: Parameters<typeof potVerifyV2Core>[0]): Promise<unknown> {
