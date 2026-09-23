@@ -23,10 +23,13 @@ test("draft-11 v2 is exactly 180 octets and verifies", () => {
   expect(verifyPotRecordV2(record, PUB, { nowTaiUs: BASE.tsTaiUs, maxSkewUs: 1_000n }).verdict).toBe("intact");
 });
 
-test("draft-11 v2 rejects integrity and issuer mutations", () => {
+test("draft-11 v2 rejects mutations at every record octet", () => {
   const record = encodePotRecordV2(BASE, KEY);
-  record[12] ^= 1;
-  expect(verifyPotRecordV2(record, PUB).verdict).toBe("rejected");
+  for (let offset = 0; offset < record.length; offset++) {
+    const mutated = Buffer.from(record);
+    mutated[offset] ^= 1;
+    expect(verifyPotRecordV2(mutated, PUB).verdict).toBe("rejected");
+  }
 });
 
 test("draft-11 v2 rejects a stale record", () => {

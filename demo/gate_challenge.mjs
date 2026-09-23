@@ -137,7 +137,7 @@ h1{font-weight:600;font-size:26px;margin:0 0 2px;letter-spacing:1px}
 @keyframes p{0%,100%{opacity:.4}50%{opacity:1}}
 </style></head><body><div class="wrap">
 <h1>TTT-MCP · LIVE GATE</h1>
-<div class="tag"><span class="dot"></span>@helm-protocol/ttt-mcp@0.4.3 · every value below is measured on this server — nothing simulated</div>
+<div class="tag"><span class="dot"></span>@helm-protocol/ttt-mcp@0.4.5 · every value below is measured on this server — nothing simulated</div>
 <div class="kpis">
   <div class="kpi allow"><div class="n" id="kAllow">0</div><div class="l">Approved</div></div>
   <div class="kpi block"><div class="n" id="kBlock">0</div><div class="l">Blocked</div></div>
@@ -187,7 +187,7 @@ pre{background:${M.panel2};border:1px solid ${M.line};border-radius:10px;padding
 code{background:${M.panel2};padding:1px 5px;border-radius:5px}
 </style></head><body><div class="wrap">
 <h1>⚔️ TTT-MCP를 뚫어라</h1>
-<div class="sub">@helm-protocol/ttt-mcp@0.4.3 · Target <code>${attackBase}/mcp/db-write</code><br>단 1바이트의 DB 오염도 허용하지 않습니다. 아래를 복사해 쏴보세요.</div>
+<div class="sub">@helm-protocol/ttt-mcp@0.4.5 · Target <code>${attackBase}/mcp/db-write</code><br>단 1바이트의 DB 오염도 허용하지 않습니다. 아래를 복사해 쏴보세요.</div>
 <div class="card"><h3>Bob의 정식 토큰 (실시간 발급)</h3>
 <div class="sub" id="bobmeta">불러오는 중…</div><pre id="bobrec">…</pre>
 <button class="btn" id="copyRec">record 복사</button></div>

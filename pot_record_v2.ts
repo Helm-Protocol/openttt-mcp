@@ -11,6 +11,8 @@ import {
 export const POT_V2_SIZE = 180;
 export const POT_V2_VERSION = 0x02;
 export const POT_V2_INTEGRITY_SHA256 = 0x0001;
+export const POT_V2_SIGNED_PREFIX_SIZE = 116;
+export const POT_V2_ISSUER_SIGNATURE_SIZE = 64;
 export const HOLDER_AUTH_ED25519 = 0x01;
 export const HOLDER_AUTH_SHARED_SECRET = 0x02;
 
@@ -83,7 +85,7 @@ export function encodePotRecordV2(fields: PotRecordV2Fields, issuerPrivateKey: K
   requireLength("nonce", fields.nonce, 16);
   requireLength("holder_auth_data", fields.holderAuthData, 32);
 
-  const prefix = Buffer.alloc(116);
+  const prefix = Buffer.alloc(POT_V2_SIGNED_PREFIX_SIZE);
   prefix.writeUInt8(POT_V2_VERSION, OFF.VERSION);
   prefix.writeUInt8(fields.holderAuthType, OFF.HOLDER_AUTH_TYPE);
   prefix.writeUInt16BE(fields.algId, OFF.ALG_ID);
@@ -101,7 +103,9 @@ export function encodePotRecordV2(fields: PotRecordV2Fields, issuerPrivateKey: K
 
 export function decodePotRecordV2(record: Buffer): DecodedPotRecordV2 {
   if (record.length !== POT_V2_SIZE) throw new Error(`expected 180 octets, got ${record.length}`);
-  const signedPrefix = record.subarray(0, 116);
+  const signedPrefix = record.subarray(0, POT_V2_SIGNED_PREFIX_SIZE);
+  const issuerSig = record.subarray(POT_V2_SIGNED_PREFIX_SIZE, POT_V2_SIZE);
+  requireLength("issuer signature", issuerSig, POT_V2_ISSUER_SIGNATURE_SIZE);
   return {
     holderAuthType: record.readUInt8(OFF.HOLDER_AUTH_TYPE),
     algId: record.readUInt16BE(OFF.ALG_ID),
@@ -112,7 +116,7 @@ export function decodePotRecordV2(record: Buffer): DecodedPotRecordV2 {
     holderAuthData: Buffer.from(record.subarray(OFF.HOLDER_AUTH_DATA, OFF.HOLDER_AUTH_DATA + 32)),
     issuerKeyId: record.readUInt32BE(OFF.ISSUER_KEY_ID),
     integrityTag: Buffer.from(record.subarray(OFF.INTEGRITY_TAG, OFF.INTEGRITY_TAG + 32)),
-    issuerSig: Buffer.from(record.subarray(OFF.ISSUER_SIG, POT_V2_SIZE)),
+    issuerSig: Buffer.from(issuerSig),
     signedPrefix: Buffer.from(signedPrefix),
   };
 }

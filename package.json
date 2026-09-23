@@ -1,6 +1,6 @@
 {
   "name": "@helm-protocol/ttt-mcp",
-  "version": "0.4.4",
+  "version": "0.4.5",
   "description": "Proof-of-Time attestation — Ed25519-signed timestamps with multi-source corroboration and explicit error bounds. IETF draft-helmprotocol-tttps",
   "main": "dist/index.js",
   "bin": {
