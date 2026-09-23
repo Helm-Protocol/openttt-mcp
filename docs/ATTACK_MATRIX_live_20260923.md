@@ -61,3 +61,15 @@ Jay 요청: 모든 공격을 현재 구현으로 방어. 실측 근거로 어디
 - 순수 네트워크 경로 탈취(BGP/DNS) 자체 = crypto 거부로 무력화하되 경로제어는 범위 밖.
 
 정직 결론: **admission으로 막을 수 있는 공격은 현 구현이 라이브로 전부 막는다.** DDoS 부하·ECC는 별 계층이라 "100% 전부"로 광고하면 과장. D-chain digest 노출은 서버 재배포가 남은 강화점.
+
+## 2단계 완료 — D-chain quorum을 MCP가 소비 (2026-09-23 17:05 KST)
+- openttt-server `/pot/status`에 `d_chain_digest`·`chain_valid`·`roughtime_quorum_min` 노출(커밋 5aca4e3, 라이브 배포). digest 비영·chain_valid:true 외부 확인.
+- MCP admission이 이제 boolean 대신 `chain_valid`(roughtime_ok AND 비영 다중소스 D-chain digest)를 요구(커밋 660633e). 단일 시간소스로는 admission 불가 = Sybil/GPS/NTP 시간소스 저항이 MCP 게이트까지 소비됨.
+- 실측(내부·외부 api.kenosian.com:8443, 실cert): Bob intact, Eve 6공격 전부 BLOCKED.
+
+### ★프로덕션 사고·복구 기록 (정직)
+openttt-server 재시작 시 `AWS_MARKETPLACE_PRODUCT_CODE` env가 유닛에 없어 크래시루프 발생(코드는 이전부터 요구, 옛 프로세스는 메모리에만 env 보유). api.kenosian.com/pot 이 수 분간 502. 드롭인 `aws-dev.conf`에 dev gatepass 플레이스홀더(`openttt-dev-gatepass`, OPENTTT_AWS_DEFAULT_GATE_PASS=true와 정합, 메터링 stub/dry-run) 추가로 복구, 3초만에 roughtime quorum 회복. **★Jay: 실제 마켓플레이스 product code를 유닛에 영구 설정해야 함(현재 dev 플레이스홀더).**
+
+### 정직한 13종 최종 판정 (0.4.1 게시 + canary 라이브)
+1 replay ✅ · 2 forgery ✅ · 3 own-issuer ✅ · 4 cross-session ✅ · 5 BGP-resign ✅ · 6 DNS-fake-issuer ✅ · 7 tamper ✅ · 8 protocol/ECC-corruption 탐지거부 ✅(정정: ECC는 정정 아니라 탐지·거부) · 9 drift/stale ✅ · 10 GPS/NTP ✅(chain_valid admission) · 11 Sybil/holder ✅ · 12 cross-pool 🟡(ctx 무결성 O, pool정책 범위밖) · 13 ordering ⬜(180B에 fleet필드 없음, 서버 deep-space에만) · Flood 🟡(IP/일 429, 분당·볼류메트릭 미측정).
+→ admission으로 막는 전 루트 라이브 방어. 12/13/Flood는 아키텍처 범위·정직 표기 유지.
