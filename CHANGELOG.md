@@ -2,6 +2,22 @@
 
 All notable changes to `@helm-protocol/ttt-mcp` are documented here.
 
+## [0.4.1] - 2026-09-23
+
+### Added — draft-11 Tier-2 admission (all env-gated, default off; unchanged verdict path when unset)
+
+- **Server-decided freshness** (`TTTPS_ENFORCE_FRESHNESS=1`, `TTTPS_MAX_SKEW_US`, default 60s): the verifier uses its own clock and tolerance; caller-supplied `nowTaiUs`/`maxSkewUs` are ignored so an attacker cannot choose the clock.
+- **Issuer pinning** (`TTTPS_PIN_SELF_ISSUER=1` or `TTTPS_TRUSTED_ISSUERS=<hex,...>`): caller-supplied `issuerPubKey` is ignored; the signature must verify against a pinned key, else `issuer not trusted`.
+- **Holder allowlist** (`TTTPS_TRUSTED_HOLDERS=<hex,...>`): a cryptographically valid record from an unlisted holder is rejected `holder not authorized`.
+- **Roughtime quorum admission** (`TTTPS_REQUIRE_ROUGHTIME_QUORUM=1`, `TTTPS_ADMISSION_STATUS_URL`): the gate admits only while the time authority reports a live multi-source Roughtime quorum; degraded consensus fails closed.
+- **Verdict audit stream** for war-room telemetry (`TTTPS_AUDIT_STREAM`, default `tttps:audit:v2`) with server-measured latency; fire-and-forget, never alters the verdict.
+- **Formal-verification provenance** on `pot_verify_v2` responses (`formal`): the TLA+ model, the Lean 4 module (`KLean.TTTPS.Core`, sorry 0 / axiom `propext`), and the kvault anchor, with an explicit `binding_status` = provenance-only (not an end-to-end 1:1 proof) and honest scope.
+
+### Fixed
+
+- `Dockerfile` HEALTHCHECK now follows `PORT` and uses HTTPS when a TLS cert is configured.
+- Removed a stale "O(1) ... 2^-256" phrase from the `pot_query` description.
+
 ## [0.4.0] - 2026-09-22
 
 ### Added — draft-helmprotocol-tttps-11 PoT Record v2 (canonical wire profile)
