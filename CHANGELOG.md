@@ -2,6 +2,35 @@
 
 All notable changes to `@helm-protocol/ttt-mcp` are documented here.
 
+## [0.4.0] - 2026-09-22
+
+### Added — draft-helmprotocol-tttps-11 PoT Record v2 (canonical wire profile)
+
+- **New tool `pot_generate_v2`** — emits the draft-11 180-octet PoT Record v2 core: SHA-256 integrity over octets 0-79 and Ed25519 issuer authentication over octets 0-115. `pot_record_v2.ts` implements encode/decode/verify.
+- **New tool `pot_verify_v2`** — verifies the v2 core and, optionally, a 64-octet Ed25519 or 32-octet HMAC TLS binding proof. Binding verification uses the TLS 1.3 keying-material exporter (`EXPORTER-TTTPS-v2-Binding`, 32 octets) of the live session; a proof computed under a different session is rejected.
+- **TLS-bound HTTPS ingress** — when `MCP_TLS_CERT_FILE` and `MCP_TLS_KEY_FILE` are set, the HTTP transport runs a TLSv1.3-only HTTPS server and threads the per-connection exporter to `pot_verify_v2` via `AsyncLocalStorage` (`tls_exporter.ts`, `transport_context.ts`).
+- **`TTTPS_V2_REQUIRE_BINDING=1`** — fail-closed mode: binding proof becomes mandatory and stdio / plain-HTTP requests (no TLS exporter) are refused.
+- **Replay protection** for v2 claims keyed on `(ctx_id, nonce)` with `TTTPS_REPLAY_TTL_SECONDS` (default 86400).
+- `scripts/tls_v2_integration.mjs` — live TLS 1.3 round-trip check (record → exporter → binding proof → verify → cross-session reject).
+
+### Changed
+
+- Draft-08 (`pot_verify_v08`) is retained for legacy interoperability only; draft-11 v2 is the canonical profile.
+- Tool count 8 → 10. Server advertises version 0.4.0 (McpServer metadata, `/health`, `server.json`).
+- CI: npm trusted publishing via GitHub OIDC with token fallback.
+
+## [0.3.4] - 2026-08-01
+
+### Changed
+
+- Depend on `openttt` ^0.3.0 for Roughtime-verified time sources.
+
+## [0.3.3] - 2026-08-01
+
+### Fixed
+
+- Published package was missing `pot_record_v08.js`; `pot_record_v08.ts` added to the esbuild entry list.
+
 ## [0.3.2] - 2026-07-30
 
 ### Added — draft-helmprotocol-tttps-08 §3 Payload Digest

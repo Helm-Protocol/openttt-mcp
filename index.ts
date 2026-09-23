@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // @helm-protocol/ttt-mcp — MCP Server for OpenTTT Proof of Time
-// Provides 8 tools for AI agents: pot_generate, pot_verify, pot_verify_v08,
+// Provides 10 tools for AI agents: pot_generate, pot_verify, pot_generate_v2, pot_verify_v2, pot_verify_v08,
 // pot_query, pot_graph, pot_stats, pot_health, pot_checkpoint
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -146,7 +146,7 @@ function toolSuccess(result: unknown): { content: { type: "text"; text: string }
 }
 
 function buildMcpServer(): McpServer {
-  const s = new McpServer({ name: "ttt-mcp", version: "0.3.2" });
+  const s = new McpServer({ name: "ttt-mcp", version: "0.4.0" });
   // MCP SDK tool overloads can exceed TypeScript instantiation depth in clean CI installs.
   // Runtime registration remains the SDK method; this local boundary keeps the published build deterministic.
   const registerTool: any = s.tool.bind(s);
@@ -366,7 +366,7 @@ async function main() {
       // Health check for Docker/Glama container probes
       if (req.method === "GET" && (req.url === "/health" || req.url === "/ping")) {
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ status: "ok", server: "ttt-mcp", version: "0.3.2" }));
+        res.end(JSON.stringify({ status: "ok", server: "ttt-mcp", version: "0.4.0" }));
         return;
       }
       // Rate limiting — free tier: 100 calls/day per IP (HTTP mode only);

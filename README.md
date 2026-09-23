@@ -55,12 +55,12 @@ Claude workflow → [context compressed] → agents call pot_query(eventId)
 ### Claude Code
 
 ```bash
-claude mcp add ttt -- npx -y @helm-protocol/ttt-mcp@0.3.3
+claude mcp add ttt -- npx -y @helm-protocol/ttt-mcp@0.4.0
 ```
 
 With an API key (raises the free limit to your plan's monthly quota):
 ```bash
-claude mcp add ttt -e TTT_API_KEY=your-key -- npx -y @helm-protocol/ttt-mcp@0.3.3
+claude mcp add ttt -e TTT_API_KEY=your-key -- npx -y @helm-protocol/ttt-mcp@0.4.0
 ```
 
 ### Claude Desktop
@@ -72,7 +72,7 @@ Add to `claude_desktop_config.json`:
   "mcpServers": {
     "ttt": {
       "command": "npx",
-      "args": ["-y", "@helm-protocol/ttt-mcp@0.3.3"],
+      "args": ["-y", "@helm-protocol/ttt-mcp@0.4.0"],
       "env": { "TTT_API_KEY": "your-key" }
     }
   }
@@ -81,7 +81,7 @@ Add to `claude_desktop_config.json`:
 
 ### Cursor
 
-[![Add to Cursor](https://img.shields.io/badge/Add%20to%20Cursor-1a1a1a?style=flat&logo=cursor&logoColor=white)](https://cursor.com/install-mcp?name=ttt&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBoZWxtLXByb3RvY29sL3R0dC1tY3BAMC4zLjMiXX0=)
+[![Add to Cursor](https://img.shields.io/badge/Add%20to%20Cursor-1a1a1a?style=flat&logo=cursor&logoColor=white)](https://cursor.com/install-mcp?name=ttt&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBoZWxtLXByb3RvY29sL3R0dC1tY3BAMC40LjAiXX0=)
 
 One-click install, or add the same `mcpServers` block above to `.cursor/mcp.json`.
 
@@ -127,12 +127,14 @@ pot_graph(eventId: "step-2", depth: 5)
 
 ---
 
-## 8 Tools
+## 10 Tools
 
 | Tool | Purpose |
 |------|---------|
 | `pot_generate` | Stamp a workflow step with a cryptographic timestamp |
 | `pot_verify` | Verify a PoT signature |
+| `pot_generate_v2` | Generate the draft-11 180-octet PoT Record v2 core (canonical wire profile) |
+| `pot_verify_v2` | Verify a v2 record; optional TLS 1.3 exporter binding proof (fails closed without TLS) |
 | `pot_verify_v08` | Verify a draft-08 §3 Payload Digest record |
 | `pot_query` | O(1) exact lookup by eventId — core amnesia recovery |
 | `pot_graph` | Traverse causal DAG (backward + forward chain) |
