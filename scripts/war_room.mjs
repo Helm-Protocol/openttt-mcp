@@ -19,7 +19,7 @@ function render() {
   const now = new Date().toISOString().replace("T", " ").slice(0, 19);
   process.stdout.write("\x1b[2J\x1b[H");
   const blockRate = stats.total ? ((stats.rejected / stats.total) * 100).toFixed(1) : "—";
-  console.log(`${C.cyn}${C.b}  TTTPS v2 GATE · LIVE WAR ROOM${C.r}   ${C.dim}@helm-protocol/ttt-mcp@0.4.0${C.r}`);
+  console.log(`${C.cyn}${C.b}  TTTPS v2 GATE · LIVE WAR ROOM${C.r}   ${C.dim}@helm-protocol/ttt-mcp@0.4.3${C.r}`);
   console.log(`${C.dim}  ${now} · stream ${STREAM} · every value below is read from the server's verdict log${C.r}`);
   console.log(`${C.cyn}${"─".repeat(72)}${C.r}`);
   console.log(`   ${C.b}INGRESS ${String(stats.total).padStart(5)}${C.r}     ${C.grn}${C.b}APPROVED ${String(stats.intact).padStart(4)}${C.r}     ${C.red}${C.b}REJECTED ${String(stats.rejected).padStart(4)}${C.r}   ${C.dim}(${blockRate}% blocked)${C.r}`);
