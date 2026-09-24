@@ -22,6 +22,8 @@ const V2 = require(path.join(here, "..", "dist", "pot_record_v2.js"));
 const PORT = Number(process.env.DEMO_PORT ?? 8090);
 const PUBLIC_URL = process.env.DEMO_PUBLIC_URL ?? `http://localhost:${PORT}`;
 const MAX_SKEW_US = 600_000_000n; // 10 min
+const MAX_BODY_BYTES = 64 * 1024;
+const REQUEST_TIMEOUT_MS = 5000;
 const DEMO_RATE_PER_MIN = Number(process.env.DEMO_RATE_PER_MIN ?? 120);
 const demoRateBuckets = new Map();
 function demoRateAllowed(ip) {
@@ -95,7 +97,6 @@ function gate(body, clientIp) {
   let verdict = "ALLOW", reason = "valid";
   try {
     const { record_hex, action } = body;
-    if (!demoRateAllowed(clientIp || "?")) throw new Error("FLOOD");
     if (typeof record_hex !== "string") throw new Error("MALFORMED_REQUEST");
     const rec = Buffer.from(record_hex, "hex");
     if (rec.length !== 180) throw new Error("INVALID_FRAME_SIZE");
@@ -272,18 +273,29 @@ const server = http.createServer((req, res) => {
     res.write(":\n\n"); for (const ev of eventHistory) res.write(`data: ${JSON.stringify(ev)}\n\n`); clients.add(res); req.on("close", () => clients.delete(res)); return;
   }
   if (req.method === "POST" && url === "/mcp/db-write") {
-    let b = ""; req.on("data", (c) => (b += c)); req.on("end", () => {
-      let parsed; try { parsed = JSON.parse(b); } catch { res.writeHead(400); return res.end('{"error":"bad json"}'); }
-      const clientIp = (req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress || "?").replace("::ffff:", "");
+    let b = ""; let bodyBytes = 0; let bodyRejected = false;
+    const timer = setTimeout(() => req.destroy(), REQUEST_TIMEOUT_MS);
+    const clientIp = (req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress || "?").replace("::ffff:", "");
+    const contentLength = Number(req.headers["content-length"] ?? 0);
+    req.setTimeout(REQUEST_TIMEOUT_MS, () => req.destroy());
+    if (Number.isFinite(contentLength) && contentLength > MAX_BODY_BYTES) { clearTimeout(timer); res.writeHead(413); res.end("{\"error\":\"body_too_large\"}"); req.destroy(); return; }
+    if (!demoRateAllowed(clientIp)) { clearTimeout(timer); res.writeHead(429, { "content-type": "application/json", "retry-after": "60" }); return res.end("{\"error\":\"rate_limit_exceeded\"}"); }
+    req.on("data", (c) => { bodyBytes += c.length; if (bodyBytes > MAX_BODY_BYTES) { bodyRejected = true; res.writeHead(413); res.end("{\"error\":\"body_too_large\"}"); req.destroy(); return; } b += c; });
+    req.on("end", () => {
+      clearTimeout(timer);
+      if (bodyRejected) return;
+      let parsed; try { parsed = JSON.parse(b); } catch { res.writeHead(400); return res.end("{\"error\":\"bad json\"}"); }
       const ev = gate(parsed, clientIp);
       res.writeHead(ev.verdict === "ALLOW" ? 200 : 403, { "content-type": "application/json" });
       res.end(JSON.stringify({ req_id: ev.reqId, verdict: ev.verdict, reason: ev.reason, latency_ms: ev.latencyMs, db_hash_before: ev.hBefore, db_hash_after: ev.hAfter, state_drift: ev.drift }));
     });
     return;
   }
-  if (req.method === "POST" && url === "/admin/reset-bob") { bobRecordHex = mintBob(); res.writeHead(200); return res.end("{}"); }
   res.writeHead(404); res.end();
 });
+server.headersTimeout = REQUEST_TIMEOUT_MS;
+server.requestTimeout = REQUEST_TIMEOUT_MS;
+server.keepAliveTimeout = REQUEST_TIMEOUT_MS;
 server.listen(PORT, () => {
   console.log(`TTT-MCP LIVE GATE demo on ${PUBLIC_URL}`);
   console.log(`  dashboard  ${PUBLIC_URL}/`);
