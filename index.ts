@@ -146,7 +146,7 @@ function toolSuccess(result: unknown): { content: { type: "text"; text: string }
 }
 
 function buildMcpServer(): McpServer {
-  const s = new McpServer({ name: "ttt-mcp", version: "0.4.4" });
+  const s = new McpServer({ name: "ttt-mcp", version: "0.4.5" });
   // MCP SDK tool overloads can exceed TypeScript instantiation depth in clean CI installs.
   // Runtime registration remains the SDK method; this local boundary keeps the published build deterministic.
   const registerTool: any = s.tool.bind(s);
@@ -366,7 +366,7 @@ async function main() {
       // Health check for Docker/Glama container probes
       if (req.method === "GET" && (req.url === "/health" || req.url === "/ping")) {
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ status: "ok", server: "ttt-mcp", version: "0.4.4" }));
+        res.end(JSON.stringify({ status: "ok", server: "ttt-mcp", version: "0.4.5" }));
         return;
       }
       // Rate limiting — free tier: 100 calls/day per IP (HTTP mode only);
@@ -404,6 +404,15 @@ async function main() {
           res.setHeader("X-RateLimit-Remaining", String(rl.remaining));
           res.setHeader("X-RateLimit-Tier", "free");
         }
+      }
+      if (req.method === "POST") {
+        const maxBodyBytes = Number(process.env.TTTPS_MAX_BODY_BYTES ?? 65536);
+        const requestTimeoutMs = Number(process.env.TTTPS_REQUEST_TIMEOUT_MS ?? 5000);
+        req.setTimeout(requestTimeoutMs, () => req.destroy());
+        const contentLength = Number(req.headers["content-length"] ?? 0);
+        if (Number.isFinite(contentLength) && contentLength > maxBodyBytes) { res.writeHead(413, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error: "payload_too_large" })); req.destroy(); return; }
+        let bodyBytes = 0;
+        req.on("data", (chunk: Buffer) => { bodyBytes += chunk.length; if (bodyBytes > maxBodyBytes && !res.headersSent) { res.writeHead(413, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error: "payload_too_large" })); req.destroy(); } });
       }
       // SDK requires both application/json and text/event-stream in Accept.
       // Smithery/Glama send only application/json — Hono reads rawHeaders (not headers),
@@ -448,6 +457,9 @@ async function main() {
         })
       : createServer((req, res) => withTransportBinding({ remoteAddress: req.socket.remoteAddress ?? "", clientId: String(req.headers["x-ttt-client-id"] ?? ""), sessionId: String(req.headers["x-ttt-session-id"] ?? "") }, () => requestHandler(req, res)));
 
+    httpServer.headersTimeout = Number(process.env.TTTPS_HEADERS_TIMEOUT_MS ?? 3000);
+    httpServer.requestTimeout = Number(process.env.TTTPS_REQUEST_TIMEOUT_MS ?? 5000);
+    httpServer.keepAliveTimeout = Number(process.env.TTTPS_KEEPALIVE_TIMEOUT_MS ?? 2000);
     httpServer.listen(port, () => {
       console.error(`[ttt-mcp] OpenTTT MCP Server (${certFile ? "HTTPS/TLS1.3" : "HTTP"}) on port ${port}`);
     });
