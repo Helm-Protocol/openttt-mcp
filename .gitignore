@@ -3,3 +3,4 @@ dist/
 .mcp-publisher
 mcp_bot_loop.sh
 *.log
+infra/tttps-xdp/*.o
