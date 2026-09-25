@@ -1,0 +1,13 @@
+[Unit]
+Description=TTTPS L4 XDP ingress rate limiter
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/libexec/tttps-xdp-load ens4 /opt/helm-protocol/openttt-mcp/infra/tttps-xdp
+ExecStop=/usr/local/libexec/tttps-xdp-unload ens4
+
+[Install]
+WantedBy=multi-user.target
