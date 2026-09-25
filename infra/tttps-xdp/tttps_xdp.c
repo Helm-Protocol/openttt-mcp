@@ -9,12 +9,8 @@
 #define TTTPS_8443 0
 #define TTTPS_8090 1
 
-struct bpf_map_def {
-    __u32 type;
-    __u32 key_size;
-    __u32 value_size;
-    __u32 max_entries;
-};
+#define __uint(name, val) int (*name)[val]
+#define __type(name, val) typeof(val) *name
 
 struct port_bucket {
     __u64 window_start_ns;
@@ -22,19 +18,19 @@ struct port_bucket {
     __u32 drops;
 };
 
-struct bpf_map_def SEC("maps") limits = {
-    .type = BPF_MAP_TYPE_ARRAY,
-    .key_size = sizeof(__u32),
-    .value_size = sizeof(__u32),
-    .max_entries = 2,
-};
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __uint(max_entries, 2);
+    __type(key, __u32);
+    __type(value, __u32);
+} limits SEC(".maps");
 
-struct bpf_map_def SEC("maps") buckets = {
-    .type = BPF_MAP_TYPE_ARRAY,
-    .key_size = sizeof(__u32),
-    .value_size = sizeof(struct port_bucket),
-    .max_entries = 2,
-};
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __uint(max_entries, 2);
+    __type(key, __u32);
+    __type(value, struct port_bucket);
+} buckets SEC(".maps");
 
 static void *(*map_lookup_elem)(void *map, const void *key) = (void *)1;
 static __u64 (*ktime_get_ns)(void) = (void *)5;
