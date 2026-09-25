@@ -7,8 +7,8 @@ Requires=tttps-xdp.service
 ExecStart=/usr/bin/python3 /opt/helm-protocol/openttt-mcp/infra/tttps-xdp/tttps-epi.py
 Restart=always
 RestartSec=2
-CapabilityBoundingSet=CAP_BPF CAP_NET_ADMIN CAP_PERFMON
-AmbientCapabilities=CAP_BPF CAP_NET_ADMIN CAP_PERFMON
+CapabilityBoundingSet=CAP_BPF CAP_NET_ADMIN CAP_PERFMON CAP_SYS_ADMIN
+AmbientCapabilities=CAP_BPF CAP_NET_ADMIN CAP_PERFMON CAP_SYS_ADMIN
 
 [Install]
 WantedBy=multi-user.target
