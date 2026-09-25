@@ -34,14 +34,38 @@ struct {
 
 static void *(*map_lookup_elem)(void *map, const void *key) = (void *)1;
 static __u64 (*ktime_get_ns)(void) = (void *)5;
+static long (*map_update_elem)(void *map, const void *key, const void *value, __u64 flags) = (void *)2;
 
-static __always_inline int rate_limit(__u32 key)
+struct {
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
+    __uint(max_entries, 4096);
+    __type(key, __u32);
+    __type(value, struct port_bucket);
+} source_buckets SEC(".maps");
+
+static __always_inline int rate_limit(__u32 key, __u32 source_ip)
 {
     __u64 now = ktime_get_ns();
     __u32 default_limit = key == TTTPS_8443 ? 20000 : 5000;
     __u32 *configured = map_lookup_elem(&limits, &key);
     __u32 limit = (configured && *configured) ? *configured : default_limit;
     struct port_bucket *bucket = map_lookup_elem(&buckets, &key);
+    __u32 source_limit = 2000;
+    struct port_bucket *source = map_lookup_elem(&source_buckets, &source_ip);
+    if (!source) {
+        struct port_bucket initial = { .window_start_ns = now, .packets = 1, .drops = 0 };
+        map_update_elem(&source_buckets, &source_ip, &initial, BPF_ANY);
+    } else {
+        if (source->window_start_ns == 0 || now - source->window_start_ns >= NS_PER_SECOND) {
+            source->window_start_ns = now;
+            source->packets = 0;
+        }
+        if (source->packets >= source_limit) {
+            source->drops++;
+            return XDP_DROP;
+        }
+        source->packets++;
+    }
 
     if (!bucket)
         return XDP_PASS;
@@ -85,7 +109,7 @@ int tttps_xdp(struct xdp_md *ctx)
         key = TTTPS_8090;
     else
         return XDP_PASS;
-    return rate_limit(key);
+    return rate_limit(key, ip->saddr);
 }
 
 char LICENSE[] SEC("license") = "GPL";

@@ -1,0 +1,14 @@
+[Unit]
+Description=TTTPS Epi adaptive XDP policy controller
+After=tttps-xdp.service
+Requires=tttps-xdp.service
+
+[Service]
+ExecStart=/usr/bin/python3 /opt/helm-protocol/openttt-mcp/infra/tttps-xdp/tttps-epi.py
+Restart=always
+RestartSec=2
+CapabilityBoundingSet=CAP_BPF CAP_NET_ADMIN CAP_PERFMON
+AmbientCapabilities=CAP_BPF CAP_NET_ADMIN CAP_PERFMON
+
+[Install]
+WantedBy=multi-user.target
