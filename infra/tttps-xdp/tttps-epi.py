@@ -14,7 +14,7 @@ def set_limit(index, value):
 while True:
     try:
         rows = dump("source_buckets")
-        counts = [int(row["value"]["packets"]) for row in rows if int(row["value"]["packets"]) > 0]
+        counts = [int(row["formatted"]["value"]["packets"]) for row in rows if int(row["formatted"]["value"]["packets"]) > 0]
         total = sum(counts)
         entropy = 0.0
         if total:
