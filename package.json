@@ -1,6 +1,6 @@
 {
   "name": "@helm-protocol/ttt-mcp",
-  "version": "0.4.6",
+  "version": "0.4.7",
   "description": "Proof-of-Time attestation — Ed25519-signed timestamps with multi-source corroboration and explicit error bounds. IETF draft-helmprotocol-tttps",
   "main": "dist/index.js",
   "bin": {
@@ -8,7 +8,8 @@
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "infra"
   ],
   "scripts": {
     "build": "esbuild index.ts tools.ts telemetry.ts auth.ts server.ts pot_record_v08.ts pot_record_v2.ts tls_exporter.ts transport_context.ts --platform=node --target=node18 --format=cjs --outdir=dist",

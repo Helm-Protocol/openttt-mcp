@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.7
+
+- Include the TTTPS L4 XDP/eBPF ingress limiter and Epi adaptive policy controller in the published package.
+- Add source-aware packet buckets and systemd deployment units for canary/edge hosts.
+
 All notable changes to `@helm-protocol/ttt-mcp` are documented here.
 
 ## [0.4.4] - 2026-09-23
