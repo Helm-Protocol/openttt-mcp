@@ -40,7 +40,7 @@ static __always_inline int rate_limit(__u32 key)
     __u64 now = ktime_get_ns();
     __u32 default_limit = key == TTTPS_8443 ? 20000 : 5000;
     __u32 *configured = map_lookup_elem(&limits, &key);
-    __u32 limit = configured ? *configured : default_limit;
+    __u32 limit = (configured && *configured) ? *configured : default_limit;
     struct port_bucket *bucket = map_lookup_elem(&buckets, &key);
 
     if (!bucket)
