@@ -3,7 +3,7 @@
 import json, math, subprocess, time
 
 def dump(name):
-    raw = subprocess.check_output(["bpftool", "map", "dump", "name", name, "-j"], text=True)
+    raw = subprocess.check_output(["bpftool", "-j", "map", "dump", "name", name], text=True)
     return json.loads(raw)
 
 def set_limit(index, value):
