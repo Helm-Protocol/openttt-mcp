@@ -14,13 +14,13 @@ export type TlsExporter = (contextValue: Buffer) => Buffer;
  * is required. The context is supplied later because draft-11 binds it to
  * the complete 180-octet record.
  */
-export function exporterForTlsSocket(socket: tls.TLSSocket): TlsExporter | undefined {
+export function exporterForTlsSocket(socket: tls.TLSSocket, label: string = TTTPS_V2_EXPORTER_LABEL): TlsExporter | undefined {
   if (!socket.encrypted || typeof socket.exportKeyingMaterial !== "function") return undefined;
   if (typeof socket.getProtocol === "function" && socket.getProtocol() !== "TLSv1.3") return undefined;
   return (contextValue: Buffer) =>
-    socket.exportKeyingMaterial(TTTPS_V2_EXPORTER_LENGTH, TTTPS_V2_EXPORTER_LABEL, contextValue);
+    socket.exportKeyingMaterial(TTTPS_V2_EXPORTER_LENGTH, label, contextValue);
 }
 
-export function extractTls13Exporter(req: http.IncomingMessage): TlsExporter | undefined {
-  return exporterForTlsSocket(req.socket as tls.TLSSocket);
+export function extractTls13Exporter(req: http.IncomingMessage, label: string = TTTPS_V2_EXPORTER_LABEL): TlsExporter | undefined {
+  return exporterForTlsSocket(req.socket as tls.TLSSocket, label);
 }

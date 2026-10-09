@@ -62,16 +62,9 @@ function writeUsageFile(entry: BucketEntry): void {
  */
 export function checkRateLimit(
   apiKey: string | undefined,
-  clientIp: string
+  clientIp: string,
+  verifiedKey?: { plan: string }
 ): { allowed: boolean; remaining: number; tier: "free" | "paid"; serverDelegated?: boolean } {
-  // API key present: this client does NOT enforce or bypass quota locally.
-  // The request is delegated to openttt-server, which enforces the plan's
-  // monthly quota and returns HTTP 429 when exceeded. `remaining: -1` here
-  // means "not locally counted" — it is NOT an unlimited grant.
-  if (apiKey && apiKey.trim().length > 0) {
-    return { allowed: true, remaining: -1, tier: "paid", serverDelegated: true };
-  }
-
   const now = Date.now();
 
   // stdio mode: file-based persistence (survives server restart)
@@ -100,6 +93,11 @@ export function checkRateLimit(
     if (m.count > FREE_TIER_PER_MIN) {
       return { allowed: false, remaining: 0, tier: "free" };
     }
+  }
+
+  // Only a registry-validated record may delegate monthly quota, after burst accounting.
+  if (verifiedKey && verifiedKey.plan.length > 0) {
+    return { allowed: true, remaining: -1, tier: "paid", serverDelegated: true };
   }
 
   // HTTP mode: in-memory daily bucket

@@ -5,22 +5,33 @@
 //   - argument binding: ctx_id (signed) == SHA256(canonical(action))[:16]
 //   - replay ledger on the signed nonce
 //   - server-clock freshness
+// Cryptographic admission is executed by the pinned Rust reference child.
+// Node owns TLS termination and serialized replay+canary commitment.
 // A real in-memory canary DB is written only after all checks pass; every request
 // records the DB state hash before/after so rejected requests demonstrably leave it
 // unchanged. Latency is measured (performance.now), never fudged.
 import http from "node:http";
+import https from "node:https";
+import net from "node:net";
 import fs from "node:fs";
 import crypto from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { startRustVerifier } from './rust_verifier.mjs';
 const require = createRequire(import.meta.url);
 const here = path.dirname(fileURLToPath(import.meta.url));
 const V2 = require(path.join(here, "..", "dist", "pot_record_v2.js"));
 
 const PORT = Number(process.env.DEMO_PORT ?? 8090);
-const PUBLIC_URL = process.env.DEMO_PUBLIC_URL ?? `http://localhost:${PORT}`;
+const BIND_HOST = process.env.DEMO_HOST ?? "0.0.0.0";
+const TLS_CERT = process.env.DEMO_TLS_CERT_FILE;
+const TLS_KEY = process.env.DEMO_TLS_KEY_FILE;
+if (!TLS_CERT || !TLS_KEY) throw new Error("TLS cert and key required for holder-bound DB writes");
+const SOURCE_SHA256 = crypto.createHash("sha256").update(fs.readFileSync(fileURLToPath(import.meta.url))).digest("hex");
+const PACKAGE_VERSION = JSON.parse(fs.readFileSync(path.join(here, "..", "package.json"))).version;
+const PUBLIC_URL = process.env.DEMO_PUBLIC_URL ?? `https://api.kenosian.com:${PORT}`;
 const MAX_SKEW_US = 600_000_000n; // 10 min
 const MAX_BODY_BYTES = 64 * 1024;
 const REQUEST_TIMEOUT_MS = 5000;
@@ -38,8 +49,18 @@ function demoRateAllowed(ip) {
 const issuer = crypto.generateKeyPairSync("ed25519");
 const issuerPrivPkcs8 = issuer.privateKey;
 const issuerPubRaw = issuer.publicKey.export({ format: "der", type: "spki" }).subarray(-32);
-const bob = crypto.generateKeyPairSync("ed25519");
+const HOLDER_KEY_FILE = process.env.DEMO_HOLDER_KEY_FILE ?? "/home/axcpeter/.cache/ttt-gate-holder.pem";
+fs.mkdirSync(path.dirname(HOLDER_KEY_FILE), { recursive: true });
+let bob;
+if (fs.existsSync(HOLDER_KEY_FILE)) {
+  const privateKey = crypto.createPrivateKey(fs.readFileSync(HOLDER_KEY_FILE));
+  bob = { privateKey, publicKey: crypto.createPublicKey(privateKey) };
+} else {
+  bob = crypto.generateKeyPairSync("ed25519");
+  fs.writeFileSync(HOLDER_KEY_FILE, bob.privateKey.export({ format: "pem", type: "pkcs8" }), { mode: 0o600, flag: "wx" });
+}
 const bobPubRaw = bob.publicKey.export({ format: "der", type: "spki" }).subarray(-32);
+const rustVerifier = startRustVerifier(process.env.DEMO_RUST_BIN ?? path.join(here,'../rust-reference/target/release/openttt-draft13-reference'), issuerPubRaw, bobPubRaw);
 
 // ---- canary DB ----
 const canaryDb = new Map([
@@ -67,6 +88,8 @@ let bobRecordHex = mintBob();
 
 const replay = new Set();
 const clients = new Set(); // SSE
+const MAX_REPLAY_ENTRIES = 100000;
+const MAX_SSE_CLIENTS = 64;
 const EVENT_LOG = process.env.DEMO_EVENT_LOG ?? "/home/axcpeter/.cache/ttt-gate-events.jsonl";
 const STATS_FILE = process.env.DEMO_STATS_FILE ?? "/home/axcpeter/.cache/ttt-gate-stats.json";
 fs.mkdirSync(path.dirname(EVENT_LOG), { recursive: true });
@@ -78,6 +101,8 @@ try {
 } catch { /* first boot or unavailable log */ }
 let stats = { total: 0, allow: 0, reject: 0, drift: 0, byReason: new Map(), lat: [] };
 try { const saved = JSON.parse(fs.readFileSync(STATS_FILE, "utf8")); stats.total = saved.total || 0; stats.allow = saved.allow || 0; stats.reject = saved.reject || 0; stats.drift = saved.drift || 0; stats.byReason = new Map(Object.entries(saved.byReason || {})); stats.lat = Array.isArray(saved.lat) ? saved.lat.slice(-1000) : []; } catch { /* first boot */ }
+// Older counters included approved writes; derive rejected-write drift from retained evidence.
+stats.drift = eventHistory.filter(e => e.verdict === "REJECT" && e.drift).length;
 function persistStats() { try { fs.writeFileSync(STATS_FILE, JSON.stringify({ total: stats.total, allow: stats.allow, reject: stats.reject, drift: stats.drift, byReason: Object.fromEntries(stats.byReason), lat: stats.lat.slice(-1000) })); } catch { /* preserve live gate if stats storage is unavailable */ } }
 
 function emit(ev) {
@@ -89,41 +114,42 @@ function emit(ev) {
 }
 
 const attackerIps = new Set();
-function gate(body, clientIp) {
+let gateTail=Promise.resolve();
+let queuedGates=0;
+async function gate(body, clientIp, socket) {
   const t0 = performance.now();
   const reqId = crypto.randomBytes(3).toString("hex").toUpperCase();
   if (clientIp) attackerIps.add(clientIp);
   const hBefore = dbHash();
   let verdict = "ALLOW", reason = "valid";
   try {
-    const { record_hex, action } = body;
-    if (typeof record_hex !== "string") throw new Error("MALFORMED_REQUEST");
+    const { record_hex, action, binding_proof } = body ?? {};
+    if (!socket.encrypted || socket.getProtocol?.() !== "TLSv1.3") throw new Error("TLS13_REQUIRED");
+    if (typeof record_hex !== "string" || !/^[0-9a-fA-F]{360}$/.test(record_hex)) throw new Error("INVALID_FRAME_ENCODING");
     const rec = Buffer.from(record_hex, "hex");
     if (rec.length !== 180) throw new Error("INVALID_FRAME_SIZE");
-    // (1) integrity + issuer signature + freshness — real pot_record_v2 verify
-    const v = V2.verifyPotRecordV2(rec, issuerPubRaw, { nowTaiUs: BigInt(Date.now()) * 1000n, maxSkewUs: MAX_SKEW_US });
-    if (v.verdict !== "intact") throw new Error(
-      v.reason === "integrity mismatch" ? "DIGEST_MUTATION_FAIL" :
-      v.reason === "issuer signature invalid" ? "ISSUER_SIGNATURE_INVALID" :
-      v.reason === "freshness window exceeded" ? "STALE_TIMESTAMP" : "RECORD_REJECTED");
-    // (2) argument binding — the signed ctx_id must equal SHA256(the action actually requested)
-    const ctxInRecord = rec.subarray(16, 32);
-    if (!ctxInRecord.equals(ctxFor(action ?? {}))) throw new Error("ARGUMENT_BINDING_FAIL");
+    // TLS terminates here; its exporter is passed privately to the pinned Rust authority.
+    const exporter = socket.exportKeyingMaterial(32, V2.DRAFT13_EXPORTER_LABEL, V2.computeDraft13ExporterContext(rec, 0));
+    const checked=await rustVerifier.verify(body,exporter,BigInt(Date.now())*1000n);
+    if (!checked.ok) throw new Error(checked.reason || 'RECORD_REJECTED');
     // (3) replay on the signed nonce
     const nonce = rec.subarray(32, 48).toString("hex");
     if (replay.has(nonce)) throw new Error("REPLAY_LEDGER_CLAIMED");
     // pass — the ONLY path that writes the DB
-    replay.add(nonce);
     const from = canaryDb.get("account:bob"), to = canaryDb.get(action.to);
-    if (!to) throw new Error("UNKNOWN_TARGET");
+    if (!to || to === from) throw new Error("UNKNOWN_TARGET");
+    if (from.balance < action.amount || !Number.isSafeInteger(to.balance + action.amount)) throw new Error("INSUFFICIENT_BALANCE");
+    // Synchronous claim + commit: no await or callback can interleave here.
+    if (replay.size >= MAX_REPLAY_ENTRIES) throw new Error("REPLAY_LEDGER_CAPACITY");
+    replay.add(nonce);
     from.balance -= action.amount; to.balance += action.amount;
   } catch (e) { verdict = "REJECT"; reason = e.message; }
   const hAfter = dbHash();
   const latencyMs = +(performance.now() - t0).toFixed(3);
   stats.total++; if (verdict === "ALLOW") stats.allow++; else { stats.reject++; stats.byReason.set(reason, (stats.byReason.get(reason) ?? 0) + 1); }
-  stats.lat.push(latencyMs);
+  stats.lat.push(latencyMs); if (stats.lat.length > 1000) stats.lat.shift();
   const ev = { reqId, verdict, reason, latencyMs, hBefore, hAfter, drift: hBefore !== hAfter, ip: clientIp || "?", attackers: attackerIps.size, ts: Date.now() };
-  if (ev.drift) stats.drift++;
+  if (ev.verdict === "REJECT" && ev.drift) stats.drift++;
   persistStats();
   emit(ev);
   return ev;
@@ -165,7 +191,7 @@ h1{font-weight:600;font-size:26px;margin:0 0 2px;letter-spacing:1px}
 @keyframes p{0%,100%{opacity:.4}50%{opacity:1}}
 </style></head><body><div class="wrap">
 <h1>TTT-MCP · LIVE GATE</h1>
-<div class="tag"><span class="dot"></span>@helm-protocol/ttt-mcp@0.4.5 · every value below is measured on this server — nothing simulated</div>
+<div class="tag"><span class="dot"></span>@helm-protocol/ttt-mcp@${PACKAGE_VERSION} · every value below is measured on this server — nothing simulated</div>
 <div class="kpis">
   <div class="kpi allow"><div class="n" id="kAllow">0</div><div class="l">Approved</div></div>
   <div class="kpi block"><div class="n" id="kBlock">0</div><div class="l">Blocked</div></div>
@@ -178,19 +204,22 @@ h1{font-weight:600;font-size:26px;margin:0 0 2px;letter-spacing:1px}
   <div class="card"><h2>Rejection reasons</h2><div class="reasons" id="reasons"><div style="color:var(--sub)">—</div></div>
     <h2 style="margin-top:18px">Server-measured latency</h2><div id="lat" style="font-family:ui-monospace,monospace;font-size:15px">p50 — · p99 — <span style="color:var(--sub)">(n=0)</span></div></div>
 </div>
-<div class="foot">Enforced before any write: SHA-256 record integrity · Ed25519 issuer signature · server-clock freshness · argument binding (ctx_id = SHA256 of the requested action) · replay ledger. A rejected request never reaches the DB — the state hash is identical before and after.</div>
+<div class="foot">TLS 1.3 draft-13 holder proof is required. Enforced before any write: SHA-256 record integrity · Ed25519 issuer signature · server-clock freshness · argument binding (ctx_id = SHA256 of the requested action) · replay ledger. A rejected request never reaches the DB — the state hash is identical before and after.</div>
 </div>
 <script>
 let allow=0,block=0,drift=0,reasons={},lat=[];
 const pct=(a,p)=>{if(!a.length)return null;const s=[...a].sort((x,y)=>x-y);return s[Math.min(s.length-1,Math.floor(p/100*s.length))]};
 const applyStats=(s)=>{allow=s.allow||0;block=s.reject||0;drift=s.drift||0;reasons=s.byReason||{};lat=s.lat||[];kAllow.textContent=allow;kBlock.textContent=block;kDrift.textContent=drift;document.getElementById('lat').innerHTML='p50 '+(pct(lat,50)??'—')+'ms · p99 '+(pct(lat,99)??'—')+'ms <span style="color:var(--sub)">(n='+lat.length+')</span>';const r=document.getElementById('reasons');r.innerHTML=Object.entries(reasons).sort((a,b)=>b[1]-a[1]).map(([k,v])=>'<div><span>'+k+'</span><span class="c">'+v+'</span></div>').join('')||'<div style="color:var(--sub)">—</div>';};
-fetch('/stats').then(r=>r.json()).then(applyStats);
+
 const es=new EventSource('/events');
 es.onmessage=(m)=>{const e=JSON.parse(m.data);
+  if(e.type==='snapshot'){applyStats(e.stats);return;}
+  if(!e.historical){
   if(e.verdict==='ALLOW')allow++;else{block++;reasons[e.reason]=(reasons[e.reason]||0)+1;if(e.drift)drift++;}
-  lat.push(e.latencyMs);
+  lat.push(e.latencyMs);if(lat.length>1000)lat.shift();
   kAllow.textContent=allow;kBlock.textContent=block;kDrift.textContent=drift;if(e.attackers!=null)kIps.textContent=e.attackers;
   hB.textContent=e.hBefore;hA.textContent=e.hAfter;eq.textContent=(e.hBefore===e.hAfter?'unchanged':'CHANGED');eq.style.color=(e.hBefore===e.hAfter?'${M.allow}':'${M.block}');
+  }
   const t=document.getElementById('tape');if(t.firstChild&&t.firstChild.style&&t.firstChild.style.color)t.innerHTML='';
   const d=document.createElement('div');d.className='e';
   d.innerHTML='<span class="badge '+e.verdict+'">'+(e.verdict==='ALLOW'?'ALLOW':'BLOCK')+'</span><span class="reason">'+e.reason+'</span><span class="meta"><span style="color:${M.accent}">'+(e.ip||'?')+'</span> · <span class="lat">'+e.latencyMs+'ms</span> · '+e.hBefore+(e.hBefore===e.hAfter?'=':'≠')+e.hAfter+' · #'+e.reqId+'</span>';
@@ -217,15 +246,15 @@ pre{background:${M.panel2};border:1px solid ${M.line};border-radius:10px;padding
 code{background:${M.panel2};padding:1px 5px;border-radius:5px}
 </style></head><body><div class="wrap">
 <h1>⚔️ TTT-MCP를 뚫어라</h1>
-<div class="sub">@helm-protocol/ttt-mcp@0.4.5 · Target <code>${attackBase}/mcp/db-write</code><br>단 1바이트의 DB 오염도 허용하지 않습니다. 아래를 복사해 쏴보세요.</div>
+<div class="sub">@helm-protocol/ttt-mcp@${PACKAGE_VERSION} · Target <code>${attackBase}/v2/verify</code><br>단 1바이트의 DB 오염도 허용하지 않습니다. 아래를 복사해 쏴보세요.</div>
 <div class="card"><h3>Bob의 정식 토큰 (실시간 발급)</h3>
 <div class="sub" id="bobmeta">불러오는 중…</div><pre id="bobrec">…</pre>
 <button class="btn" id="copyRec">record 복사</button></div>
 <div class="card"><h3>🤖 Fable 에이전트로 공격 (추천)</h3>
 <div class="sub">방금 만든 여러분의 Claude/Fable 에이전트에 아래를 그대로 던지세요.</div>
 <pre id="fablePrompt"></pre><button class="btn" id="copyPrompt">프롬프트 복사</button></div>
-<div class="card"><h3>🟢 정상 송금 (amount 500)</h3><pre id="cNormal"></pre><span class="ok">기대: ALLOW · DB 해시 1회 변경</span></div>
-<div class="card"><h3>🔴 재전송</h3><div class="sub">위 정상 요청을 한 번 더</div><span class="exp">기대: REPLAY_LEDGER_CLAIMED</span></div>
+<div class="card"><h3>🟢 정상 송금 (amount 500)</h3><pre id="cNormal"></pre><span class="ok">기대: HOLDER_PROOF_REQUIRED · 정상 실행은 홀더 개인키와 TLS 세션 증명이 필요합니다</span></div>
+<div class="card"><h3>🔴 재전송</h3><div class="sub">위 정상 요청을 한 번 더</div><span class="exp">기대: HOLDER_PROOF_REQUIRED (증명 없는 토큰) / TLS_HOLDER_BINDING_FAIL (다른 TLS 세션)</span></div>
 <div class="card"><h3>🔴 토큰 1바이트 변조</h3><div class="sub">record 맨 끝 두 글자를 아무거나 바꿔서</div><span class="exp">기대: DIGEST_MUTATION_FAIL / ISSUER_SIGNATURE_INVALID</span></div>
 <div class="card"><h3>🔴 송금액 조작 (핵심)</h3><div class="sub">record는 그대로, action.amount만 500 → 500000</div><pre id="cAmount"></pre><span class="exp">기대: ARGUMENT_BINDING_FAIL · DB 불변</span></div>
 <div class="sub">좌측 대형 화면에 여러분의 요청 판정과 DB 해시 전후가 실시간으로 뜹니다.</div>
@@ -235,14 +264,14 @@ code{background:${M.panel2};padding:1px 5px;border-radius:5px}
 fetch('/bob').then(r=>r.json()).then(b=>{
   document.getElementById('bobmeta').textContent='action: '+JSON.stringify(b.action)+' · issuer '+b.issuerPub.slice(0,12)+'…';
   document.getElementById('bobrec').textContent=b.record_hex;
-  const base="curl -X POST ${attackBase}/mcp/db-write -H 'content-type: application/json' -d ";
+  const base="curl -X POST ${attackBase}/v2/verify -H 'content-type: application/json' -d ";
   const normal=JSON.stringify({record_hex:b.record_hex,action:b.action});
   const amount=JSON.stringify({record_hex:b.record_hex,action:{to:'account:eve',amount:500000}});
   document.getElementById('cNormal').textContent=base+"'"+normal+"'";
   document.getElementById('cAmount').textContent=base+"'"+amount+"'";
   document.getElementById('copyRec').onclick=()=>navigator.clipboard.writeText(b.record_hex);
-  const prompt="너는 결제 에이전트야. 아래 TTT-MCP 엔드포인트에 POST /mcp/db-write 로 송금을 실행해줘.\\n"+
-    "endpoint: ${attackBase}/mcp/db-write\\n"+
+  const prompt="너는 결제 에이전트야. 아래 TTT-MCP 엔드포인트에 POST /v2/verify 로 송금을 실행해줘.\\n"+
+    "endpoint: ${attackBase}/v2/verify\\n"+
     "record_hex: "+b.record_hex+"\\n"+
     "정상 요청 body: "+JSON.stringify({record_hex:b.record_hex,action:b.action})+"\\n"+
     "이제 이 토큰으로 상대 잔액을 오염시켜봐 — amount를 1000000으로 키우거나, 같은 요청을 여러 번 재전송하거나, record 한 바이트를 바꿔서 시도해줘. 성공하면 알려줘.";
@@ -252,17 +281,25 @@ fetch('/bob').then(r=>r.json()).then(b=>{
 </script></body></html>`;
 }
 
-const server = http.createServer((req, res) => {
+const handler = (req, res) => {
   const url = req.url.split("?")[0];
+  if (req.method === "GET" && url === "/health") {
+    res.writeHead(rustVerifier.alive()?200:503, { "content-type": "application/json", "cache-control": "no-store" });
+    return res.end(JSON.stringify({ status: rustVerifier.alive() ? "ok" : "degraded", sourceSha256: SOURCE_SHA256, version: PACKAGE_VERSION, bindingRevision: "draft13", verificationEngine:"rust-draft13", recordSize:180, defaultVerifyPath:"/v2/verify", timePolicy: "explicit legacy Unix-us test profile; not draft13 TAI synthesis conformance", application: "isolated in-memory canary; issuer epoch changes on restart" }));
+  }
+  if (!req.socket.encrypted && req.method === "GET") {
+    res.writeHead(308, { location: PUBLIC_URL + req.url }); return res.end();
+  }
   if (req.method === "GET" && url === "/") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(dashboardHtml()); }
   if (req.method === "GET" && url === "/go") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(goHtml()); }
-  // Each participant gets their OWN fresh temporary token (unique signed nonce),
+  // Each participant gets a fresh public challenge token; possession alone does not authorize a write (unique signed nonce),
   // bound to the same legit action {to:eve, amount:500}. A correct use transfers 500
   // once; replays and any argument change are rejected.
   if (req.method === "GET" && (url === "/bob" || url === "/token")) {
+    if (!demoRateAllowed(req.socket.remoteAddress || "?")) { res.writeHead(429); return res.end(); }
     const fresh = mintBob();
     res.writeHead(200, { "content-type": "application/json" });
-    return res.end(JSON.stringify({ record_hex: fresh, action: BOB_ACTION, issuerPub: issuerPubRaw.toString("hex"), endpoint: `${PUBLIC_URL}/mcp/db-write` }));
+    return res.end(JSON.stringify({ record_hex: fresh, action: BOB_ACTION, issuerPub: issuerPubRaw.toString("hex"), endpoint: `${PUBLIC_URL}/v2/verify` }));
   }
   if (req.method === "GET" && url === "/stats") {
     res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
@@ -270,33 +307,51 @@ const server = http.createServer((req, res) => {
   }
   if (req.method === "GET" && url === "/events") {
     res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
-    res.write(":\n\n"); for (const ev of eventHistory) res.write(`data: ${JSON.stringify(ev)}\n\n`); clients.add(res); req.on("close", () => clients.delete(res)); return;
+    if (clients.size >= MAX_SSE_CLIENTS) { res.end(); return; }
+    res.write(`data: ${JSON.stringify({type: "snapshot", stats: {allow: stats.allow, reject: stats.reject, drift: stats.drift, byReason: Object.fromEntries(stats.byReason), lat: stats.lat.slice(-1000)}})}\n\n`);
+    for (const ev of eventHistory.slice(-14)) res.write(`data: ${JSON.stringify({...ev, historical: true})}\n\n`); clients.add(res); req.on("close", () => clients.delete(res)); return;
   }
-  if (req.method === "POST" && url === "/mcp/db-write") {
+  if (url === '/v1/legacy' || url.startsWith('/v1/legacy/')) {
+    res.writeHead(410,{'content-type':'application/json'});
+    return res.end(JSON.stringify({error:'LEGACY_143B_NOT_ACCEPTED',recordSize:143,migration:'Reissue a 180B v2 record; use /v2/verify. Frozen AMIs remain unchanged.'}));
+  }
+  if (req.method === "POST" && (url === "/v2/verify" || url === "/mcp/db-write")) {
     let b = ""; let bodyBytes = 0; let bodyRejected = false;
     const timer = setTimeout(() => req.destroy(), REQUEST_TIMEOUT_MS);
-    const clientIp = (req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress || "?").replace("::ffff:", "");
+    const clientIp = (req.socket.remoteAddress || "?").replace("::ffff:", "");
     const contentLength = Number(req.headers["content-length"] ?? 0);
     req.setTimeout(REQUEST_TIMEOUT_MS, () => req.destroy());
     if (Number.isFinite(contentLength) && contentLength > MAX_BODY_BYTES) { clearTimeout(timer); res.writeHead(413); res.end("{\"error\":\"body_too_large\"}"); req.destroy(); return; }
     if (!demoRateAllowed(clientIp)) { clearTimeout(timer); res.writeHead(429, { "content-type": "application/json", "retry-after": "60" }); return res.end("{\"error\":\"rate_limit_exceeded\"}"); }
     req.on("data", (c) => { bodyBytes += c.length; if (bodyBytes > MAX_BODY_BYTES) { bodyRejected = true; res.writeHead(413); res.end("{\"error\":\"body_too_large\"}"); req.destroy(); return; } b += c; });
-    req.on("end", () => {
+    req.on("end", async () => {
       clearTimeout(timer);
       if (bodyRejected) return;
       let parsed; try { parsed = JSON.parse(b); } catch { res.writeHead(400); return res.end("{\"error\":\"bad json\"}"); }
-      const ev = gate(parsed, clientIp);
+      // Serialize claim+commit with verification so another accepted write cannot
+      // appear as DB drift on a concurrently rejected request. Bound pending work.
+      if (queuedGates>=64) {res.writeHead(503);return res.end('{"error":"gate_busy"}');}
+      queuedGates++;
+      const work=gateTail.then(()=>gate(parsed,clientIp,req.socket));
+      gateTail=work.catch(()=>{});
+      let ev;try {ev=await work;}finally {queuedGates--;}
       res.writeHead(ev.verdict === "ALLOW" ? 200 : 403, { "content-type": "application/json" });
       res.end(JSON.stringify({ req_id: ev.reqId, verdict: ev.verdict, reason: ev.reason, latency_ms: ev.latencyMs, db_hash_before: ev.hBefore, db_hash_after: ev.hAfter, state_drift: ev.drift }));
     });
     return;
   }
   res.writeHead(404); res.end();
-});
-server.headersTimeout = REQUEST_TIMEOUT_MS;
-server.requestTimeout = REQUEST_TIMEOUT_MS;
-server.keepAliveTimeout = REQUEST_TIMEOUT_MS;
-server.listen(PORT, () => {
+};
+const plain = http.createServer(handler);
+const secure = https.createServer({ minVersion: "TLSv1.3", maxVersion: "TLSv1.3", cert: fs.readFileSync(TLS_CERT), key: fs.readFileSync(TLS_KEY) }, handler);
+// TLS terminates directly at this port; plaintext connections never reach the gate.
+const server = secure;
+for (const srv of [plain, secure]) {
+srv.headersTimeout = REQUEST_TIMEOUT_MS;
+srv.requestTimeout = REQUEST_TIMEOUT_MS;
+srv.keepAliveTimeout = REQUEST_TIMEOUT_MS;
+}
+server.listen(PORT, BIND_HOST, () => {
   console.log(`TTT-MCP LIVE GATE demo on ${PUBLIC_URL}`);
   console.log(`  dashboard  ${PUBLIC_URL}/`);
   console.log(`  challenge  ${PUBLIC_URL}/go   (QR this)`);

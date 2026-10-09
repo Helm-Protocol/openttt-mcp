@@ -9,8 +9,9 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { createServer } from "http";
 import { createServer as createHttpsServer } from "https";
 import { readFileSync } from "fs";
+import { randomUUID, createHash } from "crypto";
 import { extractTls13Exporter } from "./tls_exporter";
-import { withTransportBinding } from "./transport_context";
+import { currentTransportBinding, withTransportBinding } from "./transport_context";
 import { z } from "zod";
 import { potGenerate, potGenerateV2, potVerify, potVerifyV2, potVerifyV08, potQuery, potGraph, potStats, potHealth, potCheckpoint, restoreDagEntry, redis, tttsFreshnessSeal } from "./tools";
 import { checkRateLimit, resolveApiKey } from "./auth";
@@ -146,7 +147,7 @@ function toolSuccess(result: unknown): { content: { type: "text"; text: string }
 }
 
 function buildMcpServer(): McpServer {
-  const s = new McpServer({ name: "ttt-mcp", version: "0.4.5" });
+  const s = new McpServer({ name: "ttt-mcp", version: "0.4.7" });
   // MCP SDK tool overloads can exceed TypeScript instantiation depth in clean CI installs.
   // Runtime registration remains the SDK method; this local boundary keeps the published build deterministic.
   const registerTool: any = s.tool.bind(s);
@@ -224,7 +225,7 @@ function buildMcpServer(): McpServer {
     "pot_verify_v2",
     "Verify the draft-11 180-octet PoT Record v2 core. Binding-required mode fails closed in stdio because no TLS exporter session exists.",
     {
-      potRecordV2: z.string().length(360).describe("Hex-encoded 180-octet draft-11 v2 record"),
+      potRecordV2: z.string().regex(/^[0-9a-fA-F]{360}$/).describe("Hex-encoded 180-octet draft-11 v2 record"),
       issuerPubKey: z.string().length(64).optional().describe("Raw 32-octet issuer Ed25519 public key in hex"),
       nowTaiUs: z.string().optional().describe("Current TAI timestamp in microseconds"),
       maxSkewUs: z.string().optional().describe("Configured freshness allowance in microseconds"),
@@ -366,13 +367,13 @@ async function main() {
       // Health check for Docker/Glama container probes
       if (req.method === "GET" && (req.url === "/health" || req.url === "/ping")) {
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ status: "ok", server: "ttt-mcp", version: "0.4.5" }));
+        res.end(JSON.stringify({ status: "ok", server: "ttt-mcp", version: "0.4.7", bindingRevision: process.env.TTTPS_BINDING_REVISION ?? "draft11" }));
         return;
       }
       // Rate limiting — free tier: 100 calls/day per IP (HTTP mode only);
       // API key (X-TTT-API-Key) is metered server-side by monthly plan quota — not a local unlimited pass
       if (req.method === "POST") {
-        const apiKey = resolveApiKey(req.headers["x-api-key"] as string | undefined);
+        const apiKey = (req.headers["x-api-key"] as string | undefined)?.trim() || undefined;
         // X-Forwarded-For is attacker-controlled unless a trusted reverse proxy sets it.
         // Only honor it when explicitly deployed behind such a proxy (TTTPS_TRUST_PROXY=1),
         // otherwise the socket peer address is authoritative. Prevents rate-limit bypass by
@@ -382,7 +383,30 @@ async function main() {
           (trustProxy ? (req.headers["x-forwarded-for"] as string)?.split(",")[0].trim() : "") ||
           req.socket.remoteAddress ||
           "unknown";
-        const rl = checkRateLimit(apiKey, clientIp);
+        // Registry membership is authority; a nonempty string is never a paid credential.
+        let verifiedKey: { plan: string } | undefined;
+        if (apiKey) {
+          let valid = false;
+          try {
+            const raw = apiKey.length <= 512 ? await redis.get(`apikey:${apiKey}`) : null;
+            const record = raw ? JSON.parse(raw) : null;
+            valid = !!record && typeof record.plan === "string" && record.plan.length > 0;
+            if (valid) {
+              verifiedKey = { plan: record.plan };
+              const context = currentTransportBinding();
+              if (context) {
+                context.authenticatedApiKey = apiKey;
+                context.clientId = createHash("sha256").update(apiKey).digest("hex");
+              }
+            }
+          } catch { /* fail closed when the registry is unavailable */ }
+          if (!valid) {
+            res.writeHead(403, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "invalid_api_key" }));
+            return;
+          }
+        }
+        const rl = checkRateLimit(apiKey, clientIp, verifiedKey);
         if (!rl.allowed) {
           res.writeHead(429, {
             "Content-Type": "application/json",
@@ -405,14 +429,40 @@ async function main() {
           res.setHeader("X-RateLimit-Tier", "free");
         }
       }
+      let parsedBody: unknown;
       if (req.method === "POST") {
         const maxBodyBytes = Number(process.env.TTTPS_MAX_BODY_BYTES ?? 65536);
         const requestTimeoutMs = Number(process.env.TTTPS_REQUEST_TIMEOUT_MS ?? 5000);
-        req.setTimeout(requestTimeoutMs, () => req.destroy());
         const contentLength = Number(req.headers["content-length"] ?? 0);
-        if (Number.isFinite(contentLength) && contentLength > maxBodyBytes) { res.writeHead(413, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error: "payload_too_large" })); req.destroy(); return; }
-        let bodyBytes = 0;
-        req.on("data", (chunk: Buffer) => { bodyBytes += chunk.length; if (bodyBytes > maxBodyBytes && !res.headersSent) { res.writeHead(413, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error: "payload_too_large" })); req.destroy(); } });
+        if (Number.isFinite(contentLength) && contentLength > maxBodyBytes) {
+          res.writeHead(413, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "payload_too_large" }));
+          return;
+        }
+        const deadline = setTimeout(() => req.destroy(), requestTimeoutMs);
+        try {
+          const chunks: Buffer[] = [];
+          let bodyBytes = 0;
+          // Read once, with a hard limit, and pass the parsed body to the SDK.
+          // A data listener alone can consume the stream before SDK connection finishes.
+          for await (const value of req) {
+            const chunk = Buffer.isBuffer(value) ? value : Buffer.from(value);
+            bodyBytes += chunk.length;
+            if (bodyBytes > maxBodyBytes) {
+              res.writeHead(413, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ error: "payload_too_large" }));
+              return;
+            }
+            chunks.push(chunk);
+          }
+          parsedBody = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+        } catch {
+          if (!res.destroyed && !res.headersSent) {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "invalid_json_body" }));
+          }
+          return;
+        } finally { clearTimeout(deadline); }
       }
       // SDK requires both application/json and text/event-stream in Accept.
       // Smithery/Glama send only application/json — Hono reads rawHeaders (not headers),
@@ -436,7 +486,7 @@ async function main() {
         const reqServer = buildMcpServer();
         const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
         await reqServer.connect(transport);
-        await transport.handleRequest(req, res);
+        await transport.handleRequest(req, res, parsedBody);
       } catch (err) {
         if (!res.headersSent) {
           res.writeHead(500, { "Content-Type": "application/json" });
@@ -450,12 +500,18 @@ async function main() {
     if ((certFile && !keyFile) || (!certFile && keyFile)) {
       throw new Error("MCP_TLS_CERT_FILE and MCP_TLS_KEY_FILE must be configured together");
     }
+    const sessions = new WeakMap<object, string>();
+    const sessionFor = (socket: object): string => {
+      let id = sessions.get(socket);
+      if (!id) { id = randomUUID(); sessions.set(socket, id); }
+      return id;
+    };
     const httpServer = certFile && keyFile
       ? createHttpsServer({ minVersion: "TLSv1.3", cert: readFileSync(certFile), key: readFileSync(keyFile) }, (req, res) => {
           const exporter = extractTls13Exporter(req);
-          return withTransportBinding({ exporter, remoteAddress: req.socket.remoteAddress ?? "", clientId: String(req.headers["x-ttt-client-id"] ?? ""), sessionId: String(req.headers["x-ttt-session-id"] ?? "") }, () => requestHandler(req, res));
+          return withTransportBinding({ exporter, exporterDraft13: extractTls13Exporter(req, "EXPORTER-TTTPS-v2-draft13"), remoteAddress: req.socket.remoteAddress ?? "", clientId: req.socket.remoteAddress ?? "", sessionId: sessionFor(req.socket) }, () => requestHandler(req, res));
         })
-      : createServer((req, res) => withTransportBinding({ remoteAddress: req.socket.remoteAddress ?? "", clientId: String(req.headers["x-ttt-client-id"] ?? ""), sessionId: String(req.headers["x-ttt-session-id"] ?? "") }, () => requestHandler(req, res)));
+      : createServer((req, res) => withTransportBinding({ remoteAddress: req.socket.remoteAddress ?? "", clientId: req.socket.remoteAddress ?? "", sessionId: sessionFor(req.socket) }, () => requestHandler(req, res)));
 
     httpServer.headersTimeout = Number(process.env.TTTPS_HEADERS_TIMEOUT_MS ?? 3000);
     httpServer.requestTimeout = Number(process.env.TTTPS_REQUEST_TIMEOUT_MS ?? 5000);

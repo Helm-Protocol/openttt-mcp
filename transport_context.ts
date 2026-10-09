@@ -1,6 +1,8 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
 export interface TransportBindingContext {
+  authenticatedApiKey?: string;
+  exporterDraft13?: (contextValue: Buffer) => Buffer;
   exporter?: (contextValue: Buffer) => Buffer;
   clientId?: string;
   sessionId?: string;

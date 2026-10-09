@@ -16,6 +16,10 @@ import {
   verifyPotRecordV2,
   verifyV2BindingProof,
   computeV2ExporterContext,
+  computeDraft13ExporterContext,
+  verifyDraft13BindingProof,
+  decodePotRecordV2,
+  draft13Freshness,
 } from "./pot_record_v2";
 import { currentTransportBinding } from "./transport_context";
 import {
@@ -49,6 +53,9 @@ import Redis from "ioredis";
 // exhaustion). Without an API key, processing stays local (free tier, counted
 // per day in index.ts / auth.ts).
 function resolvePaidApiKey(): string | undefined {
+  const transport = currentTransportBinding();
+  // HTTP tenants use their verified credential, never the server's stdio credential.
+  if (transport) return transport.authenticatedApiKey;
   return process.env.TTT_API_KEY?.trim() || undefined;
 }
 
@@ -83,7 +90,7 @@ async function claimV2Replay(ctxIdHex: string, nonceHex: string): Promise<"claim
   if (!ctxIdHex || !nonceHex) return "unavailable";
   const key = `tttps:v2:replay:${ctxIdHex}:${nonceHex}`;
   try {
-    const result = await redis.set(key, "1", "EX", REPLAY_TTL_SECONDS, "NX");
+    const result = await redis.set(key, "1", "NX");
     return result === "OK" ? "claimed" : "replay";
   } catch {
     return "unavailable";
@@ -622,10 +629,13 @@ async function potVerifyV2Core(args: {
   bindingProof?: string;
 }): Promise<unknown> {
   telemetryIncrement("pot_verify_v2");
-  const bindingRequired = process.env.TTTPS_V2_REQUIRE_BINDING === "1";
+  const bindingRequired = process.env.TTTPS_V2_REQUIRE_BINDING !== "0";
+  const bindingRevision = process.env.TTTPS_BINDING_REVISION ?? "draft11";
+  if (!["draft11", "draft13"].includes(bindingRevision)) return serialize({ verdict: "rejected", reason: "unsupported binding revision" });
   if (bindingRequired && !args.bindingProof) {
     return serialize({ verdict: "rejected", reason: "TLS exporter binding proof is required" });
   }
+  if (!/^[0-9a-fA-F]{360}$/.test(args.potRecordV2)) return serialize({ verdict: "rejected", reason: "invalid record encoding" });
   const record = Buffer.from(args.potRecordV2, "hex");
 
   // draft-11 admission: the gate admits only while a live multi-source Roughtime
@@ -678,23 +688,29 @@ async function potVerifyV2Core(args: {
   }
 
   if (args.bindingProof) {
-    const exporter = currentTransportBinding()?.exporter;
+    const exporter = bindingRevision === "draft13" ? currentTransportBinding()?.exporterDraft13 : currentTransportBinding()?.exporter;
     if (!exporter) return serialize({ verdict: "rejected", reason: "live TLS exporter unavailable" });
     let exporterOutput: Buffer;
     try {
-      exporterOutput = exporter(computeV2ExporterContext(record));
+      exporterOutput = exporter(bindingRevision === "draft13" ? computeDraft13ExporterContext(record, 0) : computeV2ExporterContext(record));
     } catch {
       return serialize({ verdict: "rejected", reason: "TLS exporter derivation failed" });
     }
-    const binding = verifyV2BindingProof(record, Buffer.from(args.bindingProof, "hex"), exporterOutput);
+    const binding = bindingRevision === "draft13"
+      ? verifyDraft13BindingProof(record, Buffer.from(args.bindingProof, "hex"), exporterOutput, 0)
+      : verifyV2BindingProof(record, Buffer.from(args.bindingProof, "hex"), exporterOutput);
     if (binding.verdict === "rejected") return serialize(binding);
   }
-  if (process.env.TTTPS_REQUIRE_REPLAY_LEDGER === "1") {
+  if (bindingRevision === "draft13") {
+    const d = decodePotRecordV2(record);
+    if (!draft13Freshness(d.tsTaiUs, BigInt(Date.now()) * 1000n, BigInt(d.dispersionUs), BigInt(process.env.TTTPS_MAX_SKEW_US ?? "60000000"), BigInt(process.env.TTTPS_MAX_FUTURE_SKEW_US ?? "500000"))) return serialize({ verdict: "rejected", reason: "asymmetric freshness window exceeded" });
+  }
+  if (process.env.TTTPS_REQUIRE_REPLAY_LEDGER !== "0") {
     const ctxId = record.subarray(16, 32).toString("hex");
     const replay = await claimV2Replay(ctxId, result.nonce!.toString("hex"));
     if (replay !== "claimed") return serialize({ verdict: "rejected", reason: replay === "replay" ? "replay detected" : "replay ledger unavailable" });
   }
-  return serialize({ verdict: "intact", wireProfile: "draft-helmprotocol-tttps-11-v2", nonce: result.nonce!.toString("hex") });
+  return serialize({ verdict: "intact", wireProfile: "draft-helmprotocol-tttps-11-v2", bindingRevision, applicationDisposition: "VALIDATED_NOT_COMMITTED", conformance: "legacy time/context verification profile; not full draft13 conformance", nonce: result.nonce!.toString("hex") });
 }
 
 // ---------- draft-11 v2 verdict audit (server-measured latency + war-room feed) ----------

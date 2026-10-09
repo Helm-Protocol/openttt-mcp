@@ -1,0 +1,1848 @@
+
+
+
+
+Network Working Group                                          H. Jorgen
+Internet-Draft                                                  Kenosian
+Intended status: Experimental                             5 October 2026
+Expires: 8 April 2027
+
+
+               The TLS TimeToken Secure Protocol (TTTPS)
+                      draft-helmprotocol-tttps-13
+
+Abstract
+
+   This document specifies a temporal-evidence admission protocol with a
+   fixed 180-octet Proof-of-Time Record v2.  It defines issuer
+   authentication, holder presentation, context binding, asymmetric
+   freshness checks, and replay-safe application commitment.
+   Implementations can place verification at a declared application
+   boundary and can accelerate suitable operations in a kernel, NIC, or
+   FPGA without changing those requirements.
+
+   An authenticated context identifies the event, policy, source
+   evidence, and selected binding revision.  A Roughtime adapter
+   combines response-chain validation with authority-backed provenance
+   and effective-source aggregation.  Other clock adapters retain their
+   own evidence contracts.  Confidence and propagation-aware profiles
+   are optional and cannot repair a failed core check.
+
+   The core mandatory integrity algorithm is SHA-256.  Optional recovery
+   algorithms require separate complete specifications.  The protocol
+   does not establish physical truth, agent intent, legal admissibility,
+   or regulatory compliance, and does not replace clock synchronization,
+   authorization, auditing, or transparency services.
+
+Status of This Memo
+
+   This Internet-Draft is submitted in full conformance with the
+   provisions of BCP 78 and BCP 79.
+
+   Internet-Drafts are working documents of the Internet Engineering
+   Task Force (IETF).  Note that other groups may also distribute
+   working documents as Internet-Drafts.  The list of current Internet-
+   Drafts is at https://datatracker.ietf.org/drafts/current/.
+
+   Internet-Drafts are draft documents valid for a maximum of six months
+   and may be updated, replaced, or obsoleted by other documents at any
+   time.  It is inappropriate to use Internet-Drafts as reference
+   material or to cite them other than as "work in progress."
+
+   This Internet-Draft will expire on 8 April 2027.
+
+
+
+Jorgen                    Expires 8 April 2027                  [Page 1]
+
+Internet-Draft                    TTTPS                     October 2026
+
+
+Copyright Notice
+
+   Copyright (c) 2026 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to BCP 78 and the IETF Trust's Legal
+   Provisions Relating to IETF Documents (https://trustee.ietf.org/
+   license-info) in effect on the date of publication of this document.
+   Please review these documents carefully, as they describe your rights
+   and restrictions with respect to this document.  Code Components
+   extracted from this document must include Revised BSD License text as
+   described in Section 4.e of the Trust Legal Provisions and are
+   provided without warranty as described in the Revised BSD License.
+
+Table of Contents
+
+   1.  Introduction  . . . . . . . . . . . . . . . . . . . . . . . .   3
+     1.1.  Requirements and Terminology  . . . . . . . . . . . . . .   4
+     1.2.  Scope and Dispositions  . . . . . . . . . . . . . . . . .   4
+     1.3.  Processing Cost and Deployment Boundaries . . . . . . . .   5
+     1.4.  Use Cases and Composition . . . . . . . . . . . . . . . .   5
+     1.5.  Changes and Compatibility . . . . . . . . . . . . . . . .   6
+   2.  Proof-of-Time Record  . . . . . . . . . . . . . . . . . . . .   6
+     2.1.  Binary Layout . . . . . . . . . . . . . . . . . . . . . .   6
+     2.2.  Fields and Time Semantics . . . . . . . . . . . . . . . .   7
+     2.3.  Authenticated Context and Event Binding . . . . . . . . .   8
+     2.4.  Generation  . . . . . . . . . . . . . . . . . . . . . . .   9
+     2.5.  Live Verification and Commitment  . . . . . . . . . . . .  10
+     2.6.  Asymmetric Freshness Predicate  . . . . . . . . . . . . .  12
+     2.7.  COSE and JOSE Representations . . . . . . . . . . . . . .  12
+   3.  Relationship to Other Mechanisms  . . . . . . . . . . . . . .  13
+   4.  Integrity Algorithms and Recovery . . . . . . . . . . . . . .  13
+     4.1.  Mandatory SHA-256 . . . . . . . . . . . . . . . . . . . .  13
+     4.2.  Optional Algorithm Contract . . . . . . . . . . . . . . .  14
+     4.3.  Recovery and Physical Framing . . . . . . . . . . . . . .  14
+   5.  AdaptiveSwitch and Optional Policy  . . . . . . . . . . . . .  14
+     5.1.  Mode Contract . . . . . . . . . . . . . . . . . . . . . .  15
+     5.2.  Profile Inputs and Hold . . . . . . . . . . . . . . . . .  15
+   6.  Transport Binding . . . . . . . . . . . . . . . . . . . . . .  15
+     6.1.  Draft-13 TLS Holder Transcript  . . . . . . . . . . . . .  16
+     6.2.  QUIC and HTTP/3 . . . . . . . . . . . . . . . . . . . . .  16
+     6.3.  Termination and Compatibility . . . . . . . . . . . . . .  17
+   7.  Time-Source Adapter Contract  . . . . . . . . . . . . . . . .  18
+     7.1.  Evidence, Provenance and Alignment  . . . . . . . . . . .  19
+     7.2.  Roughtime D-Chain and Effective Quorum Fusion . . . . . .  19
+     7.3.  Common Bias, Oscillators and Propagation  . . . . . . . .  21
+   8.  Tier and Snapshot Policies  . . . . . . . . . . . . . . . . .  21
+   9.  Security Considerations . . . . . . . . . . . . . . . . . . .  21
+
+
+
+Jorgen                    Expires 8 April 2027                  [Page 2]
+
+Internet-Draft                    TTTPS                     October 2026
+
+
+     9.1.  Threat Model and Authority  . . . . . . . . . . . . . . .  22
+     9.2.  Replay, Retention, Recovery and Ownership . . . . . . . .  22
+     9.3.  Packet Mitigation, Queueing and Side Channels . . . . . .  23
+     9.4.  Path Attacks and Residual Limits  . . . . . . . . . . . .  23
+   10. Privacy and Retained Audit Evidence . . . . . . . . . . . . .  24
+     10.1.  Linkability and Minimization . . . . . . . . . . . . . .  24
+     10.2.  Historical Verification and Receipt Boundaries . . . . .  24
+   11. IANA Considerations . . . . . . . . . . . . . . . . . . . . .  25
+   12. Intellectual Property . . . . . . . . . . . . . . . . . . . .  25
+   13. Implementation Status . . . . . . . . . . . . . . . . . . . .  25
+     13.1.  Historical Evidence  . . . . . . . . . . . . . . . . . .  26
+     13.2.  Draft-13 Reproducibility Package . . . . . . . . . . . .  26
+   14. Optional Profiles and Future Work . . . . . . . . . . . . . .  26
+   15. References  . . . . . . . . . . . . . . . . . . . . . . . . .  27
+     15.1.  Normative References . . . . . . . . . . . . . . . . . .  27
+     15.2.  Informative References . . . . . . . . . . . . . . . . .  28
+   Appendix A.  AdaptiveSwitch Model and Admission Obligations . . .  29
+   Appendix B.  Fixed Cryptographic and Binding Vectors  . . . . . .  30
+     B.1.  Common Public Test Inputs . . . . . . . . . . . . . . . .  30
+     B.2.  Ed25519 Holder Vector . . . . . . . . . . . . . . . . . .  30
+     B.3.  PSK Holder Vector . . . . . . . . . . . . . . . . . . . .  31
+   Appendix C.  Verification Cases and State Transitions . . . . . .  32
+   Appendix D.  Revision History and Decision Ledger . . . . . . . .  33
+   Author's Address  . . . . . . . . . . . . . . . . . . . . . . . .  33
+
+1.  Introduction
+
+   TTTPS evaluates evidence before a related application effect is
+   committed.  The relevant boundary can be an agent gateway, service
+   ingress, instrumentation handoff, or another declared state
+   transition.  A cryptographically authenticated record can still be
+   stale, replayed, bound to an unintended event, or presented under an
+   inapplicable policy.  Checking a signature alone does not resolve
+   those conditions.
+
+   TTTPS specifies admission semantics and a transport-bound
+   presentation, rather than a required implementation layer.  Packet
+   prefiltering, clock capture, cryptographic acceleration, context
+   resolution, replay coordination, application execution, and evidence
+   retention can occur at different locations.  A deployment MUST
+   identify which component is authoritative for each operation.
+   Optional offload MUST preserve the same checks, signed byte domains,
+   key access policy, and commitment boundary as an ordinary
+   implementation.
+
+
+
+
+
+
+
+Jorgen                    Expires 8 April 2027                  [Page 3]
+
+Internet-Draft                    TTTPS                     October 2026
+
+
+1.1.  Requirements and Terminology
+
+   The key words MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD,
+   SHOULD NOT, RECOMMENDED, NOT RECOMMENDED, MAY, and OPTIONAL in this
+   document are to be interpreted as described in BCP 14 [RFC2119]
+   [RFC8174] when, and only when, they appear in all capitals.
+
+   *  Issuer: an authorized principal that synthesizes a timestamp and
+      signs a record.
+
+   *  Holder: the principal possessing the record's holder key or
+      configured shared secret.
+
+   *  Live verifier: a receiver evaluating a new presentation for
+      application admission.
+
+   *  Audit verifier: a party evaluating retained evidence without re-
+      executing the action.
+
+   *  Record: the 180-octet binary object.  Presentation: that record
+      followed by its separate holder proof.
+
+   *  Context: authenticated, immutable policy and event-binding data
+      resolved through ctx_id.
+
+   *  Effective source: an admitted source contribution after the
+      declared dependency-collapse policy.
+
+   *  Commit: the application effect, or recoverable idempotent
+      commitment, required by the selected application contract.
+      Validation and an execution authorization alone are not
+      commitment.
+
+1.2.  Scope and Dispositions
+
+   This document defines four dispositions.  ACCEPT denotes successful
+   completion of the selected admission commitment; it is not proof that
+   a larger business workflow has completed.  HOLD denotes a recoverable
+   condition requiring additional time or evidence under a bounded
+   policy.  UNVERIFIABLE denotes required evidence, authority, or
+   interpretation that cannot be established from available inputs.
+   REJECT denotes a definite violation of an applicable check, including
+   an invalid signature or consumed replay key.  Diagnostic reasons are
+   separate from these dispositions.
+
+   An invalid cryptographic record is rejected.  Missing authority is
+   not treated as proof that the underlying event is false.
+   Authentication, evidence applicability, execution authorization,
+
+
+
+Jorgen                    Expires 8 April 2027                  [Page 4]
+
+Internet-Draft                    TTTPS                     October 2026
+
+
+   commitment, and durable receipt storage MUST be represented as
+   distinct conditions.  A verifier MUST NOT emit final ACCEPT before
+   the commitment required by the application contract succeeds.  An
+   uncertain commit outcome is a recoverable pending operation, not a
+   fresh permission to execute again.
+
+   TTTPS does not define a general authorization language, audit schema,
+   transparency log, clock distribution network, FEC construction, or
+   physical sensor calibration.  Implementations MUST still apply the
+   relevant application authorization.  This specification makes no
+   requirement to purchase a particular cloud service or hardware
+   device.
+
+1.3.  Processing Cost and Deployment Boundaries
+
+   The binary parser, SHA-256 check, and fixed-size authentication
+   operate on bounded record inputs.  With a fixed selected algorithm
+   and correction budget, their input work does not grow with the number
+   of clock peers.  This is the bounded single-record processing claim.
+   It does not bound source aggregation, correlation analysis, replay-
+   state capacity, queueing, contention, persistence, crash recovery, or
+   distributed commitment latency.
+
+   Implementations MAY use an authenticated policy snapshot produced
+   outside the event hot path.  A snapshot MUST carry its context,
+   policy revision, generation, evidence digest, validity interval, and
+   uncertainty assumptions.  Expired or superseded snapshots MUST NOT
+   authorize a new commit.  A fast path is not permitted to waive a
+   required check.
+
+1.4.  Use Cases and Composition
+
+   Examples include an instrument-to-analysis handoff, a cold-chain
+   observation stream, a quantum-job input/result boundary, an AI
+   delegation step, and an ICT incident-log ingress.  These examples
+   identify possible observation points, not confirmed customer
+   deployments or certifications.  A read-only shadow deployment can
+   measure candidate decisions without enforcing application
+   transitions; it MUST identify its decisions as shadow observations
+   rather than completed enforcement.
+
+
+
+
+
+
+
+
+
+
+
+Jorgen                    Expires 8 April 2027                  [Page 5]
+
+Internet-Draft                    TTTPS                     October 2026
+
+
+   For vCon, CHEQ, or another interaction model, an application profile
+   identifies the precise object revision, event representation,
+   intended action, and digest authority.  A container's self-reported
+   time, the time a boundary observed it, and subsequent storage or
+   transparency registration refer to different events.  TTTPS evidence
+   can be recorded alongside these objects without requiring their
+   replacement or changing the distinction between auditing and
+   authorization.
+
+1.5.  Changes and Compatibility
+
+   This revision preserves the -12 record layout, SHA-256 protected
+   domain, issuer signed domain, asymmetric-window predicate, and four
+   dispositions.  It clarifies conservative synthesis uncertainty,
+   authenticated event/context contracts, replay retention and
+   ownership, source-adapter ordering, and historical audit
+   verification.  It corrects the CWT namespace and the reference that
+   treated the Confidence document as a complete GRG algorithm
+   definition.
+
+   The holder transcript is now direction-bound and explicitly
+   identified as the draft-13 binding.  It is not interchangeable with
+   -11 or -12.  The byte version 0x02 does not identify the binding
+   revision or uncertainty policy.  Peers MUST select both before
+   presentation.  No change described here grants an IANA assignment or
+   implies an existing deployment implements this revision.
+
+2.  Proof-of-Time Record
+
+2.1.  Binary Layout
+
+   All multi-octet integers are unsigned and big-endian.  Offsets are
+   zero-based.  The record is exactly 180 octets; the holder proof is
+   external.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Jorgen                    Expires 8 April 2027                  [Page 6]
+
+Internet-Draft                    TTTPS                     October 2026
+
+
+                  +========+========+==================+
+                  | Offset | Octets | Field            |
+                  +========+========+==================+
+                  | 0      | 1      | version = 0x02   |
+                  +--------+--------+------------------+
+                  | 1      | 1      | holder_auth_type |
+                  +--------+--------+------------------+
+                  | 2      | 2      | alg_id           |
+                  +--------+--------+------------------+
+                  | 4      | 8      | ts               |
+                  +--------+--------+------------------+
+                  | 12     | 4      | dispersion       |
+                  +--------+--------+------------------+
+                  | 16     | 16     | ctx_id           |
+                  +--------+--------+------------------+
+                  | 32     | 16     | nonce            |
+                  +--------+--------+------------------+
+                  | 48     | 32     | holder_auth_data |
+                  +--------+--------+------------------+
+                  | 80     | 32     | integrity_tag    |
+                  +--------+--------+------------------+
+                  | 112    | 4      | issuer_key_id    |
+                  +--------+--------+------------------+
+                  | 116    | 64     | issuer_sig       |
+                  +--------+--------+------------------+
+
+                                 Table 1
+
+   The issuer signature is Ed25519 [RFC8032] over record[0:116].  The
+   SHA-256 integrity tag is over record[0:80], as specified in
+   Section 4.1.  A complete presentation is record[0:180] followed by a
+   64-octet Ed25519 holder proof, or a 32-octet HMAC holder proof: 244
+   or 212 octets respectively.  These lengths describe an object, not an
+   IP packet or TLS record.  Segmentation and transport reassembly do
+   not alter them.
+
+2.2.  Fields and Time Semantics
+
+   Unknown version, holder type, or unsupported integrity algorithm MUST
+   cause REJECT.  Version 0x02 defines only this binary layout.  Binding
+   revision, source policy, and extension meaning are selected through
+   authenticated context or endpoint configuration, not inferred from
+   arrival time or length.
+
+
+
+
+
+
+
+
+Jorgen                    Expires 8 April 2027                  [Page 7]
+
+Internet-Draft                    TTTPS                     October 2026
+
+
+   ts is integer TAI microseconds since 1958-01-01 00:00:00 TAI.  UTC
+   leap-second adjustments MUST NOT be applied to this continuous count.
+   Source adapters MUST explicitly convert their native time scale and
+   epoch.  An unidentified scale, expired conversion data, or
+   unavailable required transformation yields UNVERIFIABLE rather than a
+   guessed offset.
+
+   dispersion is an unsigned 32-bit conservative synthesis-uncertainty
+   bound in microseconds, under the selected source policy.  It includes
+   admitted-source spread and the declared source accuracy, alignment,
+   sample-age and holdover uncertainty.  A sample spread alone is not an
+   absolute-error bound.  The computation in Section 2.4 MUST be used by
+   a draft-13 synthesis policy.  A deployment accepting an older
+   uncertainty interpretation MUST select that policy explicitly and
+   MUST NOT describe it as equivalent to this one.
+
+   ctx_id is an opaque 128-bit identifier for the authenticated context
+   described in Section 2.3. nonce is a fresh 128-bit value generated
+   using a cryptographically secure random generator [RFC4086].
+   Randomness alone does not provide replay prevention.
+
+   For holder_auth_type 0x01, holder_auth_data is the 32-octet Ed25519
+   public key.  Type 0x01 is mandatory to implement.  For optional type
+   0x02, holder_auth_data is SHA-256(k_h), where k_h is a separately
+   provisioned shared secret with at least 256 bits of entropy.  The
+   secret MUST NOT be transmitted in the record.  PSK digests permit
+   correlation and must not be treated as anonymous identifiers.
+
+   issuer_key_id is a 32-bit key selector within the context's
+   authenticated issuer namespace.  It is not a globally unique identity
+   or trust anchor.  Resolution MUST include authorized issuer identity,
+   permitted key use, validity and revocation policy.  An ambiguous
+   selector MUST NOT trigger arbitrary trial of unrelated trust-store
+   keys.
+
+2.3.  Authenticated Context and Event Binding
+
+   Before selecting windows or profiles, the live verifier MUST resolve
+   ctx_id to a trusted context or an equivalent explicitly configured
+   authenticated binding.  The context MUST be immutable for that
+   identifier.  A material change to an event binding or admission
+   policy requires a new ctx_id, or a protocol that authenticates the
+   old/new mapping and preserves all outstanding replay and pending-
+   commit state.  Silent mutable remapping is forbidden.
+
+   The context contract MUST identify its authenticating authority,
+   issuer namespace and permitted holders, audience, application
+   boundary and action semantics, policy revision, record/binding
+
+
+
+Jorgen                    Expires 8 April 2027                  [Page 8]
+
+Internet-Draft                    TTTPS                     October 2026
+
+
+   revision, source-evidence references, time scale/epoch, and required
+   profile identities.  It MUST identify tier_window_us,
+   max_clock_skew_us, maximum dispersion, maximum hold duration, and
+   replay/commit authority.  Each configuration input is size-bounded
+   and authenticated before affecting admission.
+
+   A profile asserting an event binding MUST identify the exact event
+   representation and digest algorithm, intended action/resource and
+   audience, and any sequence namespace/identity.  It MUST bind that
+   information to ctx_id and to the presentation's nonce or immutable
+   event authorization.  A context authorizing multiple events MUST
+   specify how each nonce selects its event.  Merely naming a stream
+   does not bind a particular payload.  The core record carries no
+   arbitrary payload digest or sequence field and cannot prove such a
+   relation by itself.
+
+   A digest reference MUST be authenticated by the declared event-
+   binding authority; hashing a mutable manifest is insufficient.
+   Receivers MUST verify the actual selected event bytes against that
+   binding before authorizing commitment.  Missing context or an
+   unsupported required interpretation yields UNVERIFIABLE.  Expired
+   evidence expected to refresh MAY yield bounded HOLD.  An
+   authenticated but wrong event/action/audience or contradictory
+   binding causes REJECT.
+
+   Optional manifests and extension envelopes do not change the
+   180-octet layout.  Admission-relevant fields MUST be authenticated
+   and bound to record digest, ctx_id, nonce, profile revision and
+   policy.  Unrecognized critical fields MUST NOT lead to ACCEPT.  Only
+   explicitly noncritical metadata can be ignored, under the selected
+   envelope's bounded decoding rules.  Existing version bits MUST NOT be
+   reinterpreted as extension flags.
+
+2.4.  Generation
+
+   The issuer MUST use the authenticated source and context policy.  It
+   MUST perform these operations before signing:
+
+   1.  Admit authenticated source identities and validate the selected
+       adapter's evidence.  In a Roughtime policy, use the sequence in
+       Section 7.2.  Do not count unauthenticated observations.
+
+   2.  Map admitted identities to dependency groups under the declared
+       provenance authority.  Collapse known common dependencies before
+       counting effective contributions.  Require at least three
+       effective sources from distinct administrative domains and the
+       policy's independence assumptions.  If that population cannot be
+       established, do not issue a record.
+
+
+
+Jorgen                    Expires 8 April 2027                  [Page 9]
+
+Internet-Draft                    TTTPS                     October 2026
+
+
+   3.  Convert and align effective readings to a common evaluation
+       instant and integer TAI microseconds.  For each selected reading
+       T_i, retain a conservative nonnegative uncertainty U_i including
+       conversion, age and holdover.  Rounding MUST preserve the upper
+       uncertainty bound.
+
+   4.  Sort the effective readings.  Set ts to index floor((k-1)/2),
+       using zero-based indexing.  It is the middle reading for odd k
+       and the lower middle for even k.
+
+   5.  Set dispersion = max_i(abs(T_i - ts) + U_i).  Use checked or
+       wider arithmetic.  If dispersion exceeds UINT32_MAX or the
+       authenticated policy cap, do not issue a record.
+
+   6.  Generate nonce, assemble record[0:80], and compute the selected
+       integrity tag.  Assign the issuer key selector within the
+       context's namespace.
+
+   7.  Sign record[0:116] with the issuer's Ed25519 key and output the
+       complete record.  The binding proof is generated later from the
+       live session.
+
+   The dispersion formula is conservative under the declared U_i bounds,
+   not a proof that the sources are physically correct.  The issuer MUST
+   retain the source roster, grouping policy, alignment evidence, U_i
+   values, aggregate and evidence digest required for re-verification.
+   Correctly signed false measurements remain possible under a
+   compromised authority.
+
+2.5.  Live Verification and Commitment
+
+   A live verifier MUST follow the ordered procedure below.  It MUST
+   authenticate context selection before using policy parameters, but a
+   context lookup does not authenticate the candidate record.  Lookups
+   and unauthenticated work MUST be bounded.  Recovery, when explicitly
+   selected, is subject to Section 4.3.
+
+   1.   Bound the candidate presentation to exactly 244 or 212 octets
+        before field extraction.  Require the length corresponding to
+        holder_auth_type.  Reject truncation, trailing bytes, and
+        inconsistent framing.
+
+   2.   Check version, holder type and selected alg_id.  Reject
+        unsupported values or a representation inconsistent with
+        authenticated configuration.
+
+
+
+
+
+
+Jorgen                    Expires 8 April 2027                 [Page 10]
+
+Internet-Draft                    TTTPS                     October 2026
+
+
+   3.   Verify the integrity tag over the declared protected bytes.
+        SHA-256 mismatch is unresolvable and causes REJECT.  A match is
+        only an integrity precheck, not issuer or holder authentication.
+
+   4.   Resolve the authenticated context, active policy and required
+        evidence snapshots.  Validate integer ranges and apply the
+        asymmetric freshness predicate in Section 2.6.  No later profile
+        can relax a failed core predicate.
+
+   5.   Perform a bounded read-only replay lookup for (ctx_id, nonce).
+        A consumed key causes REJECT before issuer-key resolution and
+        proof work.  A miss MUST NOT reserve, insert, authenticate, or
+        authorize the key.
+
+   6.   Resolve issuer_key_id within the authenticated namespace.  Check
+        trust, permitted key use, validity, and revocation policy.
+        Unavailable trust evidence is UNVERIFIABLE; a known policy
+        violation is REJECT.
+
+   7.   Verify issuer_sig over record[0:116].  Verify the authorized
+        holder identity and its separate live proof under Section 6.1.
+        A signed key alone does not establish application permission.
+
+   8.   Verify actual event/action binding and audience, selected
+        source/profile evidence, current snapshot generation, and
+        application execution authority.  Policy evaluation may return
+        HOLD, UNVERIFIABLE or REJECT without consuming the nonce.  A
+        local permit is only permission to attempt the final operation,
+        not final ACCEPT.
+
+   9.   Immediately before commitment, ensure freshness, context, key
+        status and policy generation remain applicable.  If a queue
+        delay, clock discontinuity, policy change or revocation
+        invalidates them, do not commit.  The interval from revalidation
+        to commit MUST be governed by the application transaction or an
+        explicit bounded reservation/expiry contract; expiry during that
+        interval MUST NOT authorize a late effect.
+
+   10.  Atomically claim (ctx_id, nonce) and perform the required
+        application commitment as specified in Section 9.2.  A claim
+        conflict causes REJECT without a new effect.  Emit final ACCEPT
+        only after confirmed commitment.  Record uncertain or
+        interrupted operations for recovery; do not issue a false ACCEPT
+        or repeat the effect.
+
+   HOLD, UNVERIFIABLE and REJECT MUST NOT cause a new application effect
+   or consume a previously unclaimed nonce merely because validation
+   failed.  This does not undo an already committed action whose
+
+
+
+Jorgen                    Expires 8 April 2027                 [Page 11]
+
+Internet-Draft                    TTTPS                     October 2026
+
+
+   response was lost.  That operation is recovered through its existing
+   idempotency record, not reclassified as an unexecuted fresh request.
+   Implementations MUST keep validation outcomes, pending execution,
+   completed action and receipt persistence separately observable.
+
+2.6.  Asymmetric Freshness Predicate
+
+   now and ts are uint64 TAI microseconds.  W = tier_window_us and F =
+   max_clock_skew_us are uint64 microseconds; D = dispersion is uint32.
+   F defaults to 500,000 microseconds.  A different F and the W/D caps
+   require authenticated policy.  This default is not a hardware
+   accuracy claim.
+
+   if ts > now:
+       if ts - now > F: REJECT
+   else:
+       if W > UINT64_MAX - D: REJECT
+       if now - ts > W + D: REJECT; select FULL if enabled
+
+   Equality is within the window.  Dispersion MUST NOT extend the future
+   allowance.  Wrapped arithmetic MUST NOT determine admission.  A
+   failed or unknown local time input cannot be replaced with packet
+   arrival heuristics.  Required clock evidence unavailable at
+   evaluation yields UNVERIFIABLE or bounded HOLD under the selected
+   policy.
+
+2.7.  COSE and JOSE Representations
+
+   The authoritative signed representation is the exact binary record.
+   An optional COSE_Sign1 [RFC9052] wrapper uses that record as its
+   byte-string payload.  A JWS [RFC7515] wrapper likewise signs the
+   binary record, encoded as required by JWS.  An outer signature does
+   not replace the inner issuer signature, holder proof, replay check or
+   application authority.
+
+   An optional transport object can contain two fields named pot and
+   proof.  A CBOR object uses a map with those text keys and byte-string
+   values.  A JSON object uses those keys with unpadded Base64url
+   strings representing the exact bytes.  Duplicate keys, invalid
+   Base64url, nonminimal encodings where the selected profile requires
+   canonical encoding, and inconsistent inner lengths MUST be rejected.
+   Size and nesting limits MUST be enforced before decoding untrusted
+   input.
+
+   These two-field objects are TTTPS-specific objects, not CWT claim
+   maps.  They MUST NOT assign CWT numeric claims 1–7 new meanings;
+   those claims retain their definitions in [RFC8392].  A profile
+   embedding TTTPS into a CWT MUST define an appropriate separate claim
+
+
+
+Jorgen                    Expires 8 April 2027                 [Page 12]
+
+Internet-Draft                    TTTPS                     October 2026
+
+
+   namespace.  This revision allocates no CWT or COSE header label.  The
+   holder proof remains separately verified against the live session,
+   even if carried in an outer object.  Changing representation MUST NOT
+   reconstruct or re-sign approximate record fields through floating-
+   point JSON numbers.
+
+3.  Relationship to Other Mechanisms
+
+   TLS provides channel confidentiality, integrity and configured peer
+   authentication.  JWS and COSE authenticate signed objects.  These
+   mechanisms can themselves be verified before application execution;
+   they are not inherently passive logging.  TTTPS specifies the
+   particular combined temporal, context, holder, replay and commitment
+   contract in this document.
+
+   RFC 3161 [RFC3161] provides timestamp tokens for a supplied message
+   imprint under a timestamp authority's policy.  Roughtime provides
+   authenticated time observations and causal query evidence.  Neither
+   is claimed to have a universal fixed network latency.  PTP and PHC
+   interfaces provide clock/capture substrates under deployment
+   assumptions; they do not alone provide a transferable cryptographic
+   attestation or independent source quorum.
+
+   Audit containers and transparency systems can retain TTTPS results
+   and evidence after a local decision.  Retention and transparency
+   registration do not prove that every source event was captured, or
+   that an accepted request completed.  A deployment claiming capture
+   completeness MUST define its expected event range and sequence
+   authority.  An independent verifier can evaluate only the evidence
+   actually retained under its declared trust assumptions.
+
+4.  Integrity Algorithms and Recovery
+
+4.1.  Mandatory SHA-256
+
+   alg_id 0x0001 selects SHA-256 [RFC6234].  Every conforming core
+   implementation MUST implement it. integrity_tag = SHA-
+   256(record[0:80]), using the complete 32-octet digest.  Verification
+   compares that value with record[80:112].  The algorithm yields intact
+   on equality and unresolvable otherwise; it never yields resolved.
+
+   SHA-256 is unkeyed.  An attacker can recalculate this tag after
+   changing a field.  Detection of unauthorized alteration therefore
+   depends on the subsequent issuer signature and holder/event
+   authentication.  No claim about an undetected modification
+   probability is derived by multiplying unrelated cryptographic bounds.
+
+
+
+
+
+Jorgen                    Expires 8 April 2027                 [Page 13]
+
+Internet-Draft                    TTTPS                     October 2026
+
+
+4.2.  Optional Algorithm Contract
+
+   Other algorithms are OPTIONAL and require an explicitly selected,
+   complete profile specifying identifier scope, protected bytes,
+   canonical inputs, output, detection/correction limits, error handling
+   and interoperability vectors.  An alg_id alone is not that
+   specification.  Unsupported algorithms are rejected; a verifier MUST
+   NOT retry SHA-256 after a selected optional algorithm fails.
+
+   This core does not assign an algorithm definition to GRG or define
+   its internal stage construction.  The Confidence document
+   [CONFIDENCE] defines policy evidence, not a complete GRG decoder or
+   parameter set.  It MUST NOT be cited as a substitute for a missing
+   integrity specification.  Core conformance has no undeclared
+   dependency on a proprietary profile.
+
+4.3.  Recovery and Physical Framing
+
+   An optional recovery profile MUST declare which fields can be
+   recovered, correction limits, bounded resource use and the
+   authoritative recovered representation.  Algorithm selection and
+   decoder configuration MUST be authenticated before decoding.  Decoder
+   changes to version, algorithm selector, holder/issuer identity,
+   context or event-binding meaning MUST NOT bypass an authorization
+   boundary.  Received and recovered byte domains MUST be distinguished
+   in retained evidence.
+
+   After recovery, the complete applicable procedure in Section 2.5 MUST
+   run over the authoritative canonical record.  The holder transcript
+   MUST bind that same record.  A later signature, confidence signal or
+   audit action MUST NOT turn unresolvable input into successful
+   verification.  A recovered record still requires issuer
+   authentication, holder possession, current applicability and final
+   replay/commit checks.
+
+   Link-layer FEC is a separate contract.  Its framing, protected bytes,
+   interleaving, padding, length bounds and decoding configuration MUST
+   be explicit.  A receiver MUST NOT select a code from record length or
+   entropy.  No GRG/RS/Golay parameter set is defined or inferred by
+   this document.  No private intermediate algorithm state is required
+   for core interoperability.
+
+5.  AdaptiveSwitch and Optional Policy
+
+
+
+
+
+
+
+
+Jorgen                    Expires 8 April 2027                 [Page 14]
+
+Internet-Draft                    TTTPS                     October 2026
+
+
+5.1.  Mode Contract
+
+   AdaptiveSwitch is optional.  FULL and TURBO are implementation modes,
+   not admission dispositions or evidence of correctness.  Both MUST
+   perform all required core checks.  A deployment enables the mode
+   controller through authenticated policy.  It defines promotion/
+   maintenance thresholds, observation identity, dwell unit, reset
+   condition, bounded backoff and maximum HOLD duration.
+
+   A failure that invalidates current TURBO eligibility MUST update the
+   observation and demote to FULL atomically, before processing
+   subsequent work under that eligibility.  Promotion requires the
+   configured sequence of qualifying authenticated observations.  The
+   finite model in Appendix A counts consecutive observations; it does
+   not measure elapsed seconds.  A seconds-based companion policy MUST
+   specify monotonic elapsed time and restart/clock-discontinuity
+   handling separately.
+
+5.2.  Profile Inputs and Hold
+
+   A selected Confidence [CONFIDENCE] or Deep-space [DEEPSPACE] profile
+   MUST identify its revision and compatibility with this core's epoch,
+   uncertainty, freshness and transcript.  The profiles cited here were
+   written against earlier core revisions; selecting them requires an
+   explicit compatibility contract.  This document does not assert they
+   already implement this revision.
+
+   Policy inputs MUST be authenticated, context-bound, generation-bound
+   and current.  Optional G-score, von Neumann or Epi signals cannot
+   repair core failure, change signed bytes, choose an unauthorized
+   decoder or invent source independence.  G-score and correlation-aware
+   analysis operate on their declared input domains; they do not
+   establish unobserved physical truth.  Expensive analysis can occur
+   outside the hot path with a valid snapshot, not by silently ignoring
+   its cost.
+
+   HOLD MUST identify its cause, maximum duration and terminal
+   transition.  Expiry cannot produce ACCEPT without new valid evidence
+   and authority.  Loss of otherwise recoverable required quorum can
+   produce HOLD; unavailable required authority or an unsupported
+   mandatory interpretation produces UNVERIFIABLE.  Diagnostic names
+   such as HOLD_AHE do not create additional core dispositions.
+
+6.  Transport Binding
+
+
+
+
+
+
+
+Jorgen                    Expires 8 April 2027                 [Page 15]
+
+Internet-Draft                    TTTPS                     October 2026
+
+
+6.1.  Draft-13 TLS Holder Transcript
+
+   Use the post-handshake TLS 1.3 exporter interface in [RFC9846],
+   Section 7.5.  Verify the configured peer identity and finish the
+   handshake before presentation.  The early exporter MUST NOT be used.
+   TTTPS presentations MUST NOT be sent or admitted in TLS early data or
+   QUIC 0-RTT.
+
+   Let direction be one octet: 0x00 for a Holder presenting as the TLS
+   client, 0x01 for a Holder presenting as the TLS server.  The verifier
+   derives the peer's actual presentation direction, not its own.
+   Unknown directions MUST be rejected.  Labels below are literal ASCII;
+   concatenation has no implicit length prefix.
+
+   domain = "tttps-binding-v2-draft13"
+   label  = "EXPORTER-TTTPS-v2-draft13"
+   record_hash = SHA-256(record[0:180])
+   context_value = SHA-256(domain || 0x00 || direction || record_hash)
+   exporter_output = TLS-Exporter(label, context_value, 32)
+   binding_input = domain || 0x00 || direction ||
+                   exporter_output || record_hash
+
+   type 0x01: proof = Ed25519.Sign(holder_sk, binding_input)
+   type 0x02: proof = HMAC-SHA256(k_h, binding_input)
+
+   The domain is 24 ASCII octets.  The context-hash input is 58 octets
+   and binding_input is 90 octets.  Appendix B supplies fixed fixtures.
+   exporter_output MUST NOT be transmitted or retained as a public
+   receipt.  Type 0x02 requires possession of the configured secret and
+   constant-time verification of its record digest and proof [RFC2104].
+   It does not permit public third-party verification without that
+   secret; third-party retention of the secret would introduce another
+   trust boundary.
+
+   The whole record hash binds the issuer signature and selectors as
+   well as ctx_id and nonce.  Direction separation prevents one
+   direction's proof from being accepted as the other's on the same
+   session under shared holder credentials.  Session separation and the
+   final replay claim are both required: the exporter does not replace
+   the consumed-state ledger.
+
+6.2.  QUIC and HTTP/3
+
+   QUIC [RFC9000] carriage uses the exporter of its TLS session after
+   handshake completion.  A direct application stream MUST identify its
+   delimited 244/212-octet presentation and configured binding revision.
+   Stream identifiers are deployment parameters; this document defines
+   no new QUIC frame.
+
+
+
+Jorgen                    Expires 8 April 2027                 [Page 16]
+
+Internet-Draft                    TTTPS                     October 2026
+
+
+   HTTP/3 [RFC9114] retains h3 ALPN and standard DATA frames.  An
+   explicitly configured TTTPS endpoint accepts POST with provision-
+   stage content-type application/tttps.  Its body is exactly record
+   followed by proof; received and declared Content-Length, when
+   present, MUST agree with the selected 244/212-octet length.  A
+   receiver MUST cap reassembly before parsing even if the body spans
+   DATA frames or Content-Length is absent.  Malformed HTTP is handled
+   under HTTP rules and cannot authorize a TTTPS action.
+
+   An ignored HTTP extension frame is not temporal evidence.  Endpoint
+   selection, media type and authenticated configuration MUST identify
+   this binding revision; none alone authenticates a record.  This
+   document defines no new HTTP/3 frame or status-code semantics.
+
+6.3.  Termination and Compatibility
+
+   The two peers MUST agree on record layout, binding revision, source/
+   uncertainty policy, context authority and application profile before
+   presentation.  ALPN alone does not identify those choices.  A failed
+   proof MUST NOT trigger automatic detection, downgrade or retry of
+   another transcript.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Jorgen                    Expires 8 April 2027                 [Page 17]
+
+Internet-Draft                    TTTPS                     October 2026
+
+
+    +=====================+=====================+====================+
+    | Historical revision | Layout / time basis | Holder contract    |
+    +=====================+=====================+====================+
+    | 00                  | JSON / Unix ns      | Different legacy   |
+    |                     |                     | contract           |
+    +---------------------+---------------------+--------------------+
+    | 01–06               | 143-octet record /  | Legacy exporter    |
+    |                     | Unix ns             | carriage           |
+    +---------------------+---------------------+--------------------+
+    | 07                  | 180-octet v2 / TAI  | Earlier holder     |
+    |                     | us                  | transcript         |
+    +---------------------+---------------------+--------------------+
+    | 08                  | 184/216-octet /     | Different payload/ |
+    |                     | Unix ns             | holder format      |
+    +---------------------+---------------------+--------------------+
+    | 09–10               | 180-octet v2 / TAI  | Earlier holder     |
+    |                     | us                  | transcript         |
+    +---------------------+---------------------+--------------------+
+    | 11                  | 180-octet v2 / TAI  | ctx/nonce exporter |
+    |                     | us                  | binding            |
+    +---------------------+---------------------+--------------------+
+    | 12                  | 180-octet v2 /      | Record-hash        |
+    |                     | fixed TAI epoch     | binding            |
+    +---------------------+---------------------+--------------------+
+    | 13                  | Same v2 / fixed TAI | Direction-bound    |
+    |                     | epoch               | transcript above   |
+    +---------------------+---------------------+--------------------+
+
+                                 Table 2
+
+   This table describes format families, not automatic interoperability.
+   Each supported legacy variant requires its own explicit adapter and
+   security policy.  Historical Unix nanoseconds MUST NOT be interpreted
+   as current TAI microseconds.  An older source policy's sample spread
+   MUST NOT silently be advertised as the new uncertainty bound.
+
+   TLS termination changes the presentation boundary.  An intermediary
+   cannot copy a proof to a different session.  A gateway that
+   legitimately re-presents a record MUST be an authorized holder for
+   that context, produce its own session-bound proof, and retain the
+   relationship between the original observation and new presentation.
+   Such re-presentation does not prove end-to-end possession by the
+   original principal.
+
+7.  Time-Source Adapter Contract
+
+
+
+
+
+
+Jorgen                    Expires 8 April 2027                 [Page 18]
+
+Internet-Draft                    TTTPS                     October 2026
+
+
+7.1.  Evidence, Provenance and Alignment
+
+   Every selected source adapter MUST state source authentication,
+   identity authority, native time scale, conversion revision,
+   calibration, sample age, alignment method, uncertainty growth,
+   freshness bounds and failure semantics.  Valid signatures establish
+   the claimed origin, not independence or absolute accuracy.  Raw key
+   count, source-IP count and repeated observations are not independent
+   votes.
+
+   The authenticated provenance policy MUST identify known shared
+   upstream clock, detector, operator, host, network, ephemeris and
+   calibration dependencies relevant to the deployment.  It maps
+   admitted observations to effective failure-domain groups and selects
+   at most one effective contribution per group.  The within-group
+   selection/combination rule MUST be fixed before aggregation;
+   duplicate aliases do not increase voting weight.  Physical or
+   administrative diversity alone is not proof of independence.
+
+   A PTP/PHC/GNSS adapter need not implement a Roughtime D-chain.  It
+   supplies its own authenticated calibration and source evidence
+   contract.  A deployment requiring independent evidence for a hardware
+   clock MUST state how that evidence is obtained.  Hardware ns capture
+   precision, microsecond wire resolution, absolute uncertainty and
+   processing latency are distinct properties.
+
+7.2.  Roughtime D-Chain and Effective Quorum Fusion
+
+   This adapter is selected explicitly for Roughtime [ROUGHTIME].  It
+   preserves the distinction between the standard client's response
+   chaining and TTTPS's evidence admission and effective-source
+   aggregation.  Roughtime servers are not required to implement a new
+   cross-signing protocol.  The adapter MUST execute this order:
+
+   1.  Authenticate the configured server identities and validate
+       response signatures, certificate/delegation constraints, request
+       nonce linkage and the pinned Roughtime revision's response
+       checks.  Invalid observations acquire no voting authority.
+
+   2.  Validate the client measurement sequence and causal nonce
+       chaining specified by that Roughtime revision, retaining the
+       complete referenced requests/responses and required random
+       values.  Verify selected freshness and measurement-age bounds.
+       The adapter's D-chain reference MUST identify exactly this
+       validated sequence and any separately authenticated round-
+       continuity evidence; the two are not conflated.
+
+
+
+
+
+Jorgen                    Expires 8 April 2027                 [Page 19]
+
+Internet-Draft                    TTTPS                     October 2026
+
+
+   3.  Map successfully validated identities through the authenticated
+       provenance authority and collapse common dependencies.  Determine
+       effective contributions under the declared fixed grouping rule.
+
+   4.  Count N_eff from those admitted effective groups, require at
+       least three and the selected quorum, and apply a Byzantine
+       aggregate only under the declared bound f < N_eff/2. f is a
+       threat-model bound, not a number proved merely by observing
+       agreement.
+
+   5.  Align observations made at different instants, retaining causal
+       order, propagation assumptions, sample-age uncertainty, native
+       scale conversions and the common evaluation instant.  Apply
+       Section 2.4 to produce an authenticated context-bound synthesis
+       snapshot.
+
+   An evidence-bundle encoding MUST be declared by the selected adapter
+   profile, canonical and bounded.  It MUST identify the pinned protocol
+   revision, ordered complete response references/digests, source
+   roster, chain-validation result, effective-group mapping, policy,
+   validity and snapshot generation.  A bare expression SHA-256(k
+   attestations) without a length/order contract is insufficient.  The
+   bundle digest and its relationship to ctx_id MUST be authenticated; a
+   client-supplied digest alone has no source authority.
+
+   This core defines the adapter obligations, not a new Roughtime packet
+   format or universal bundle encoding.  A deployment without a complete
+   selected bundle contract cannot claim that adapter's conformance and
+   MUST NOT substitute guessed evidence.  Non-Roughtime adapters use
+   Section 7.1 and do not inherit this chain-specific requirement.
+   Missing recoverable quorum causes bounded HOLD; invalid signatures
+   are rejected observations; unavailable required authority yields
+   UNVERIFIABLE.  No missing vote is fabricated.
+
+   The selected -19 measurement sequence queries at least three servers
+   twice in the same selected order.  After the first random nonce, each
+   query's nonce depends on the complete preceding response and a fresh
+   32-octet random value, under that revision's hash construction.
+   Repeated rounds establish measurement-sequence evidence; they MUST
+   NOT turn one server or one dependency group into multiple effective
+   votes.  A valid chain constrains query order but does not establish
+   honest server time or source independence.
+
+
+
+
+
+
+
+
+
+Jorgen                    Expires 8 April 2027                 [Page 20]
+
+Internet-Draft                    TTTPS                     October 2026
+
+
+7.3.  Common Bias, Oscillators and Propagation
+
+   Under an honest-majority assumption with honest effective readings in
+   a bounded interval, the sampled median lies within that interval.
+   This does not provide a 1/k error attenuation factor, prove that the
+   interval contains true time, or remove a common offset shared by all
+   sources.  Spread and covariance computed from those same observations
+   cannot detect every hidden common bias.
+
+   An independently calibrated local oscillator MAY add a consistency
+   constraint.  Its independence, calibration age, temperature/aging
+   budget, permitted discipline adjustments, slew limits, accumulated
+   deviation and holdover MUST be included in policy.  A derivative
+   threshold alone can miss slow poisoning.  A consistency failure is
+   not automatically proof of an attack.  If every anchor shares the
+   same compromised dependency, the unknown absolute offset remains
+   outside the guarantee.
+
+   A propagation-aware profile MUST authenticate endpoints, time scale/
+   epoch, frame, ephemeris/navigation authority, one-way-delay interval,
+   uncertainty and conversion revision before core window selection.  A
+   later propagation or confidence result MUST NOT revive a record
+   already rejected by the applicable core predicate.  This document
+   does not specify a flight-qualified time transformation or imply a
+   physical interplanetary deployment.
+
+8.  Tier and Snapshot Policies
+
+   No fixed tier duration, fee or performance guarantee is assigned by
+   the core.  An authenticated policy chooses W, F, maximum dispersion,
+   max_hold_window and profile identities.  All core time windows and
+   hold bounds use integer microseconds; another unit MUST be explicitly
+   converted without underestimating uncertainty.
+
+   Snapshot generation and validity MUST be bound to context and policy.
+   A stale snapshot, missing mandatory profile or contradictory
+   authority MUST NOT trigger an implicit terrestrial default or weaker
+   decoder.  The verifier MUST recheck applicability before commit and
+   preserve pending-operation state during policy changes.
+   AdaptiveSwitch thresholds are unrelated to encoding units or vendor
+   clock specifications.
+
+9.  Security Considerations
+
+
+
+
+
+
+
+
+Jorgen                    Expires 8 April 2027                 [Page 21]
+
+Internet-Draft                    TTTPS                     October 2026
+
+
+9.1.  Threat Model and Authority
+
+   The protocol assumes suitable cryptographic algorithms, uncompromised
+   required keys, an authenticated context and trust policy, and the
+   selected source/dependency bounds.  It does not prove those
+   assumptions.  An issuer possessing its key can sign an inaccurate
+   timestamp.  A private-key compromise cannot be dated from a valid
+   signature alone; independently bound issuance or transparency
+   evidence is needed to distinguish historical creation times.
+
+   Deployments MUST scope issuer selectors and authorized holders to the
+   context.  They MUST apply configured key validity and revocation
+   rules at live admission and state their separate historical audit
+   policy.  Revocation changes future admissibility; it does not
+   retroactively prove that earlier event content was false.  A
+   transparency entry requires its own inclusion and trust checks;
+   naming a log is not proof of registration.
+
+9.2.  Replay, Retention, Recovery and Ownership
+
+   The exact consumed-state authority is keyed by (ctx_id, nonce).  The
+   read-only precheck is an optimization; the final atomic claim remains
+   mandatory.  A cache miss is not authority to commit.  A probabilistic
+   filter MAY assist a lookup but MUST NOT be the sole final consumed-
+   state or claim authority.  False positives require exact resolution;
+   deletion or saturation MUST NOT permit false-negative acceptance.
+
+   Consumed state MUST remain for the entire interval in which that
+   record could be admitted under any applicable active policy.  Under a
+   fixed trusted-time policy, the final past-window instant is ts + W +
+   D; equality remains valid, so eviction at that instant is unsafe.
+   Compute retention with checked/wider arithmetic.  TTL measured only
+   from first claim can expire too early for an admissible future-dated
+   record.
+
+   Policy-window widening, clock rollback and context reuse MUST NOT
+   resurrect an already consumed record.  A deployment MUST preserve
+   outstanding consumed and pending state, invalidate affected old
+   contexts/tokens through an authenticated transition, or use an
+   equivalent recovery rule.  If trusted-time evidence is insufficient
+   for safe eviction, retain state or suspend admission.  Capacity
+   exhaustion MUST NOT evict still-admissible consumed keys merely to
+   keep accepting.
+
+   A deployment MAY choose memory, databases and context-scoped
+   sharding.  It MUST preserve a single effective claim authority and
+   at-most-once application effect for each key across concurrency,
+   crash, restart, network partition and ownership transfer.  Hash
+
+
+
+Jorgen                    Expires 8 April 2027                 [Page 22]
+
+Internet-Draft                    TTTPS                     October 2026
+
+
+   routing alone is not that authority.  If epochs/fencing are used, the
+   actual commit sink MUST reject stale owners.  State transfer must
+   cover live consumed keys and pending operations before a replacement
+   owner can admit them.
+
+   Claim and commitment MUST share a transaction where possible.
+   Otherwise the selected application contract MUST provide durable
+   idempotency, operation identity, completion recovery and a rule that
+   cannot repeat the effect after a crash or lost response.  Restarting
+   with an empty in-memory ledger while accepting old contexts is
+   nonconformant unless another preserved authority prevents their
+   reuse.  A claim's success alone is not final ACCEPT.  A retry of a
+   confirmed completed operation recovers that result; it never performs
+   a new commitment.
+
+9.3.  Packet Mitigation, Queueing and Side Channels
+
+   Optional XDP/eBPF packet filtering can enforce configured L4 rate
+   limits before the temporal parser.  Ordinary XDP processing cannot
+   inspect fields inside TLS ciphertext.  Source-IP buckets are traffic
+   classifications, not authenticated principals or effective clock
+   peers.  Generic and native XDP modes and hardware offload have
+   different measured boundaries.
+
+   XDP_DROP does not constitute TTTPS REJECT, a parsed-record reason
+   code or a temporal verification receipt.  Network telemetry MAY
+   retain separate drop observations.  L4 traffic entropy MUST NOT
+   replace G-score, aligned correlation analysis, Epi-state evidence or
+   an authenticated profile snapshot.  It MUST NOT select temporal
+   profiles or waive verification.  There is no implied line-rate
+   performance, volumetric-DDoS protection or availability guarantee.
+
+   Queues and budgets MUST bound unauthenticated work.  A deployment MAY
+   prioritize recent qualifying records, but MUST revalidate before
+   commitment, define starvation/fairness limits and preserve replay
+   safety.  Priority selection need not be O(1).  Constant-time secret-
+   dependent cryptography and safe key storage are REQUIRED.  Error
+   responses MUST NOT expose secret keys, exporter values, private
+   intermediate state or an unrestricted context enumeration oracle.
+
+9.4.  Path Attacks and Residual Limits
+
+   A path attacker lacking issuer/holder credentials cannot forge their
+   valid authentication under the algorithms' assumptions.  It can still
+   delay, drop or relay a valid presentation within the allowed
+   interval.  The window and replay ledger limit admission of such
+   traffic; they do not prove zero delay or prevention of the first
+   valid relay.  Session binding constrains reuse across sessions and
+
+
+
+Jorgen                    Expires 8 April 2027                 [Page 23]
+
+Internet-Draft                    TTTPS                     October 2026
+
+
+   directions but does not establish application intent.
+
+   A request whose unkeyed tag is recomputed after context substitution
+   still requires a new valid issuer signature and correct event/holder
+   authority.  Freshness without replay state, replay state without
+   event binding, and authenticated evidence without execution
+   permission are each insufficient.  No profile result can waive a
+   failed mandatory gate.  Numeric overflow, duplicated representation
+   keys, algorithm confusion, unknown critical extensions and automatic
+   legacy fallback are explicit rejection conditions.
+
+10.  Privacy and Retained Audit Evidence
+
+10.1.  Linkability and Minimization
+
+   Random nonces do not make records unlinkable. ctx_id, holder key or
+   PSK digest, issuer selector, timing and application metadata can
+   correlate them.  Context and provenance manifests can reveal
+   additional relationships.  Deployments SHOULD minimize disclosure,
+   specify access/retention policy and document key/context rotation.  A
+   low-entropy event digest can reveal information through dictionary
+   testing; hashing is not encryption.
+
+10.2.  Historical Verification and Receipt Boundaries
+
+   An audit verifier MUST distinguish a retained record, the recorded
+   live-verification decision, subsequent action outcome and storage/
+   transparency evidence.  It can recheck issuer signatures, supplied
+   event bindings and retained source evidence under a declared
+   historical policy.  It MUST NOT execute the action, claim a new live
+   holder presentation from a receipt alone, or use today's nonce ledger
+   as permission to replay the old action.
+
+   A retained proof without its required session verification evidence
+   does not independently recreate a historical TLS exporter.  Retained
+   attestations may report the live verifier's observation under its own
+   signature/trust boundary.  Reports MUST identify what was directly
+   reverified and what relied on that observation.  PSK observations are
+   not publicly verifiable as holder-exclusive signatures.
+
+   Missing, failed and inconclusive evidence can be retained separately
+   under confidentiality/privacy constraints.  Retention does not
+   convert them to successful verification.  A storage anchor, including
+   configured immutable retention, does not prove collection
+   completeness or physical truth.  This core defines no receipt wire
+   schema, storage vendor, automatic legal effect or regulatory
+   certification.
+
+
+
+
+Jorgen                    Expires 8 April 2027                 [Page 24]
+
+Internet-Draft                    TTTPS                     October 2026
+
+
+11.  IANA Considerations
+
+   This revision makes no formal registration request and asserts no
+   assignment, reservation or registration. application/tttps, tttps/1,
+   and the draft-13 exporter label are provision-stage identifiers
+   requiring explicit endpoint configuration.  Future registration must
+   follow [RFC6838], [RFC7301] and the TLS exporter registry procedures
+   described by [RFC9847].  Actual registry status and allocation are
+   separate from this manuscript.
+
+   For direct application carriage, tttps/1 comprises the seven ASCII
+   octets 74 74 74 70 73 2f 31.  HTTP/3 continues to use its existing h3
+   identifier.  The draft-13 exporter label is the literal ASCII
+   EXPORTER-TTTPS-v2-draft13 with a nonempty 32-octet context and a
+   32-octet output.  These names are not a new TLS extension, QUIC/HTTP
+   frame, URI-scheme registration, CWT claim or COSE header allocation.
+
+   alg_id 0x0001 is a document-local core value, not an assertion of an
+   IANA algorithm registry.  This revision does not allocate additional
+   algorithms.  Future specifications require complete definitions and
+   an explicit allocation process; an unsupported value MUST be
+   rejected.
+
+12.  Intellectual Property
+
+   Core conformance requires the publicly specified SHA-256 mode and
+   issuer/holder authentication defined here; no optional recovery or
+   confidence profile is required.  Optional implementations have their
+   own explicitly selected specifications.  Absence of an optional
+   profile does not waive a deployment policy that requires it, and its
+   presence does not establish interoperability or patent clearance.
+
+   Intellectual-property matters are handled through BCP 79 [RFC8179].
+   This document makes no determination about the validity, scope or
+   applicability of any intellectual-property right and states no
+   specific licensing terms.  Publication and code-component copyright
+   requirements are distinct from patent permissions.  Particular
+   storage structures, cloud products, accelerators and private
+   algorithm constructions are not mandatory core dependencies.
+
+13.  Implementation Status
+
+   This section follows [RFC7942].  It is to be removed before RFC
+   publication.  Evidence is scoped to a revision, artifact and tested
+   boundary.  A successful old implementation test does not establish
+   conformance with a changed transcript, uncertainty policy or
+   application commitment contract.
+
+
+
+
+Jorgen                    Expires 8 April 2027                 [Page 25]
+
+Internet-Draft                    TTTPS                     October 2026
+
+
+13.1.  Historical Evidence
+
+   The published -12 document [CORE12] reports separate cohorts for
+   OpenTTT-MCP 0.4.7 (source e60bae0686a232cc1593e04a70f8f70ff4d7ce5c),
+   a -12 reference harness and predicate/model checks.  It identifies
+   the MCP package's legacy -11 binding and symmetric freshness helper.
+   Those reported results are historical evidence, not newly rerun tests
+   or an implementation of this revision.  Operator-identified server
+   revision 1a4c058 has no complete revision-bound conformance result in
+   the evidence reviewed for this manuscript.
+
+   The same baseline reports generic-XDP and bounded HTTP canary
+   observations.  Those observations do not establish FPGA timing
+   closure, Outposts/PTP capture accuracy, native-XDP line rate, full
+   DDoS defense or sustained workload availability.  Previously reported
+   sub-500 ns values are limited to their stated FPGA simulation
+   configuration.  No such timing target is a normative core
+   requirement.
+
+13.2.  Draft-13 Reproducibility Package
+
+   The accompanying reference.py, verify_draft13.py, protocol-
+   vectors.json and validation-results.json implement the mandatory byte
+   layout, SHA/Ed25519/PSK cryptographic fixtures, direction-bound
+   transcript using a supplied exporter fixture, asymmetric windows and
+   bounded source/ledger models.  Commands and artifact hashes are
+   recorded in VERIFICATION.md and manifest.json.  Test seeds and
+   exporter fixtures are public test-only inputs, not deployment
+   credentials.
+
+   The cryptographic fixtures test record and proof computations.  The
+   state models test explicitly enumerated scheduling/retention/recovery
+   assumptions.  They do not implement a production distributed
+   database, complete Roughtime network adapter, live TLS stack, HTTP/3
+   stack, physical clock, optional GRG decoder or an independently
+   reproduced customer deployment.  A fixture exporter value is not a
+   real TLS handshake.  Deployment performance and independent
+   reproduction remain unmeasured here.
+
+14.  Optional Profiles and Future Work
+
+   Confidence [CONFIDENCE] and Deep-space [DEEPSPACE] are cited as work
+   in progress and remain separate profile specifications.
+   Implementations selecting them MUST provide the compatibility and
+   authenticated evidence contract in Section 5.2.  New profile
+   revisions can adopt the current transcript/uncertainty semantics
+   without changing core byte offsets.
+
+
+
+
+Jorgen                    Expires 8 April 2027                 [Page 26]
+
+Internet-Draft                    TTTPS                     October 2026
+
+
+   Further work includes complete adapter bundle specifications and
+   independent interoperability, profile-bound recovery vectors,
+   application-specific commitment adapters, independent time-conversion
+   reference packages, physical timing measurements, and formal
+   registration requests.  None is silently replaced by a simulation,
+   placeholder decoder or generic regulatory claim.  The fully specified
+   mandatory core can be evaluated without these optional
+   implementations.
+
+15.  References
+
+15.1.  Normative References
+
+   [RFC2104]  Krawczyk, H., Bellare, M., and R. Canetti, "HMAC: Keyed-
+              Hashing for Message Authentication", RFC 2104, February
+              1997, <https://www.rfc-editor.org/info/rfc2104>.
+
+   [RFC2119]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", RFC 2119, March 1997,
+              <https://www.rfc-editor.org/info/rfc2119>.
+
+   [RFC4086]  Eastlake, D., Schiller, J., and S. Crocker, "Randomness
+              Requirements for Security", RFC 4086, June 2005,
+              <https://www.rfc-editor.org/info/rfc4086>.
+
+   [RFC6234]  Eastlake, D. and T. Hansen, "US Secure Hash Algorithms
+              (SHA and SHA-based HMAC and HKDF)", RFC 6234, May 2011,
+              <https://www.rfc-editor.org/info/rfc6234>.
+
+   [RFC6838]  Freed, N., Klensin, J., and T. Hansen, "Media Type
+              Specifications and Registration Procedures", RFC 6838,
+              January 2013, <https://www.rfc-editor.org/info/rfc6838>.
+
+   [RFC7301]  Friedl, S., Popov, A., Langley, A., and E. Stephan,
+              "Transport Layer Security (TLS) Application-Layer Protocol
+              Negotiation Extension", RFC 7301, July 2014,
+              <https://www.rfc-editor.org/info/rfc7301>.
+
+   [RFC7515]  Jones, M., Bradley, J., and N. Sakimura, "JSON Web
+              Signature (JWS)", RFC 7515, May 2015,
+              <https://www.rfc-editor.org/info/rfc7515>.
+
+   [RFC8032]  Josefsson, S. and I. Liusvaara, "Edwards-Curve Digital
+              Signature Algorithm (EdDSA)", RFC 8032, January 2017,
+              <https://www.rfc-editor.org/info/rfc8032>.
+
+
+
+
+
+
+Jorgen                    Expires 8 April 2027                 [Page 27]
+
+Internet-Draft                    TTTPS                     October 2026
+
+
+   [RFC8174]  Leiba, B., "Ambiguity of Uppercase vs Lowercase in RFC
+              2119 Key Words", RFC 8174, May 2017,
+              <https://www.rfc-editor.org/info/rfc8174>.
+
+   [RFC8179]  Bradner, S. and J. Contreras, "Intellectual Property
+              Rights in IETF Technology", RFC 8179, May 2017,
+              <https://www.rfc-editor.org/info/rfc8179>.
+
+   [RFC8392]  Jones, M., Wahlstroem, E., Erdtman, S., and H. Tschofenig,
+              "CBOR Web Token (CWT)", RFC 8392, May 2018,
+              <https://www.rfc-editor.org/info/rfc8392>.
+
+   [RFC9000]  Iyengar, J. and M. Thomson, "QUIC: A UDP-Based Multiplexed
+              and Secure Transport", RFC 9000, May 2021,
+              <https://www.rfc-editor.org/info/rfc9000>.
+
+   [RFC9052]  Schaad, J., "CBOR Object Signing and Encryption (COSE):
+              Structures and Process", RFC 9052, August 2022,
+              <https://www.rfc-editor.org/info/rfc9052>.
+
+   [RFC9114]  Bishop, M., "HTTP/3", RFC 9114, June 2022,
+              <https://www.rfc-editor.org/info/rfc9114>.
+
+   [RFC9846]  Rescorla, E., "The Transport Layer Security (TLS) Protocol
+              Version 1.3", RFC 9846, July 2026,
+              <https://www.rfc-editor.org/info/rfc9846>.
+
+   [RFC9847]  Salowey, J. and S. Turner, "IANA Registry Updates for TLS
+              and DTLS", RFC 9847, December 2025,
+              <https://www.rfc-editor.org/info/rfc9847>.
+
+   [ROUGHTIME]
+              Ladd, W. and M. Dansarie, "Roughtime", Work in Progress,
+              Internet-Draft, draft-ietf-ntp-roughtime-19, 17 March
+              2026, <https://datatracker.ietf.org/doc/html/draft-ietf-
+              ntp-roughtime-19>.
+
+15.2.  Informative References
+
+   [CONFIDENCE]
+              Jorgen, H., "Oracle Confidence Gating for TTTPS: G-Score,
+              Correlation-Aware von Neumann Confidence, and
+              AdaptiveSwitch", Work in Progress, Internet-Draft, draft-
+              helmprotocol-confidence-02, 29 September 2026,
+              <https://datatracker.ietf.org/doc/html/draft-helmprotocol-
+              confidence-02>.
+
+
+
+
+
+Jorgen                    Expires 8 April 2027                 [Page 28]
+
+Internet-Draft                    TTTPS                     October 2026
+
+
+   [CORE12]   Jorgen, H., "The TLS TimeToken Secure Protocol (TTTPS)",
+              Work in Progress, Internet-Draft, draft-helmprotocol-
+              tttps-12, 30 September 2026,
+              <https://datatracker.ietf.org/doc/html/draft-helmprotocol-
+              tttps-12>.
+
+   [DEEPSPACE]
+              Jorgen, H., "TTTPS Deep-space Profile: Propagation-Aware
+              Time Attestation", Work in Progress, Internet-Draft,
+              draft-helmprotocol-deepspace-02, 29 September 2026,
+              <https://datatracker.ietf.org/doc/html/draft-helmprotocol-
+              deepspace-02>.
+
+   [RFC3161]  Adams, C., Cain, P., Pinkas, D., and R. Zuccherato,
+              "Internet X.509 Public Key Infrastructure Time-Stamp
+              Protocol (TSP)", RFC 3161, August 2001,
+              <https://www.rfc-editor.org/info/rfc3161>.
+
+   [RFC7942]  Sheffer, Y. and A. Farrel, "Improving Awareness of Running
+              Code: The Implementation Status Section", RFC 7942, July
+              2016, <https://www.rfc-editor.org/info/rfc7942>.
+
+Appendix A.  AdaptiveSwitch Model and Admission Obligations
+
+   This informative appendix preserves the -12 finite AdaptiveSwitch
+   model as AdaptiveSwitch.tla and AdaptiveSwitch.cfg in the package.
+   Its Observe transition changes the observation and mode together.
+   Its DwellRequired is a count of consecutive qualifying observations,
+   not elapsed seconds.  The finite configuration is reproducible with
+   the packaged Python exploration; historical TLC results in [CORE12]
+   are not transferred to a new proof of all implementations.
+
+   An admission model must separately cover bounded parse, invalid-
+   ingress no effect, required gate order, final claim, at-most-once
+   commit, accepted-result-after-commit, drop-without-temporal-
+   disposition, crash recovery and stale-owner rejection.  Predicate-
+   labelled schedules do not prove cryptographic implementations or
+   physical source independence.  The mutation controls in the package
+   remove the final replay claim and demonstrate why a read-only
+   precheck alone cannot guarantee at-most-once effects.
+
+
+
+
+
+
+
+
+
+
+
+Jorgen                    Expires 8 April 2027                 [Page 29]
+
+Internet-Draft                    TTTPS                     October 2026
+
+
+Appendix B.  Fixed Cryptographic and Binding Vectors
+
+   This informative appendix's complete byte values are inserted from
+   protocol-vectors.json by the reproducible document builder.  The
+   authoritative fixtures use the exact algorithms and domains in
+   Section 4.1 and Section 6.1.  Deterministic public seeds are for
+   tests only.  All values are hexadecimal; line wrapping does not add
+   octets.  A supplied sample exporter output tests the proof
+   transcript, not TLS key derivation or handshake authenticity.
+
+B.1.  Common Public Test Inputs
+
+   ts = 2100000000000000; dispersion = 100; issuer_key_id = 1001;
+   direction = 0.  The seeds below are published test keys, never
+   production credentials.
+
+   issuer_seed:
+   9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60
+   issuer_public:
+   d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a
+   holder_seed:
+   4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb
+   holder_public:
+   3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c
+   psk:
+   000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
+   exporter_fixture:
+   202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f
+   ctx_id:
+   00112233445566778899aabbccddeeff
+   nonce:
+   ffeeddccbbaa99887766554433221100
+
+B.2.  Ed25519 Holder Vector
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Jorgen                    Expires 8 April 2027                 [Page 30]
+
+Internet-Draft                    TTTPS                     October 2026
+
+
+   record:
+   02010001000775f05a0740000000006400112233445566778899aabbccddeeff
+   ffeeddccbbaa998877665544332211003d4017c3e843895a92b70aa74d1b7ebc
+   9c982ccf2ec4968cc0cd55f12af4660c5cf2bfa0a58c85a33f32e5ebbbeb34fa
+   79441c78f7c70de475bd0c30e6629d0b000003e9135ec500276a3a2ac2b603af
+   a325c2e54a7ffc1fd4108bbb1ed7c453c428f0921f462789c36a92615696198c
+   56a4652c25eb78947d5036a1a2470102e9c4290d
+   integrity_tag:
+   5cf2bfa0a58c85a33f32e5ebbbeb34fa79441c78f7c70de475bd0c30e6629d0b
+   issuer_signed_bytes:
+   02010001000775f05a0740000000006400112233445566778899aabbccddeeff
+   ffeeddccbbaa998877665544332211003d4017c3e843895a92b70aa74d1b7ebc
+   9c982ccf2ec4968cc0cd55f12af4660c5cf2bfa0a58c85a33f32e5ebbbeb34fa
+   79441c78f7c70de475bd0c30e6629d0b000003e9
+   issuer_signature:
+   135ec500276a3a2ac2b603afa325c2e54a7ffc1fd4108bbb1ed7c453c428f092
+   1f462789c36a92615696198c56a4652c25eb78947d5036a1a2470102e9c4290d
+   record_hash:
+   968122a4b0af83c17a1d9efd2e7fcdb7e97ccd0f751940321de75bfee12b0569
+   exporter_context_hash:
+   0a79108f007531c8ee489cf41679e2989650ac76540a4751c4702e56bac59053
+   binding_input:
+   74747470732d62696e64696e672d76322d647261667431330000202122232425
+   262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f968122a4b0af
+   83c17a1d9efd2e7fcdb7e97ccd0f751940321de75bfee12b0569
+   holder_proof:
+   af4cbed0316474c4b05dc1afa01969605acda016e3b6436583b8428322760f3c
+   4020f94ddbf3f5b60b5bce539407cc8b859f8144124c614daa54e0e37636460c
+   presentation:
+   02010001000775f05a0740000000006400112233445566778899aabbccddeeff
+   ffeeddccbbaa998877665544332211003d4017c3e843895a92b70aa74d1b7ebc
+   9c982ccf2ec4968cc0cd55f12af4660c5cf2bfa0a58c85a33f32e5ebbbeb34fa
+   79441c78f7c70de475bd0c30e6629d0b000003e9135ec500276a3a2ac2b603af
+   a325c2e54a7ffc1fd4108bbb1ed7c453c428f0921f462789c36a92615696198c
+   56a4652c25eb78947d5036a1a2470102e9c4290daf4cbed0316474c4b05dc1af
+   a01969605acda016e3b6436583b8428322760f3c4020f94ddbf3f5b60b5bce53
+   9407cc8b859f8144124c614daa54e0e37636460c
+
+B.3.  PSK Holder Vector
+
+
+
+
+
+
+
+
+
+
+
+
+Jorgen                    Expires 8 April 2027                 [Page 31]
+
+Internet-Draft                    TTTPS                     October 2026
+
+
+   record:
+   02020001000775f05a0740000000006400112233445566778899aabbccddeeff
+   ffeeddccbbaa99887766554433221100630dcd2966c4336691125448bbb25b4f
+   f412a49c732db2c8abc1b8581bd710dd94b2652334f11f00c2b844d351e64f05
+   4e9598542dba5f88595f4a45da21e232000003e9f4e432c3acf244a0c5f8990a
+   6d8704cb6fcadb7d1c1c48c51d5d55e15857cc7631849ba6ff5ece9f4cc741ef
+   e57408ed7d3a903fa718596b9bc65c816d4fe20d
+   integrity_tag:
+   94b2652334f11f00c2b844d351e64f054e9598542dba5f88595f4a45da21e232
+   issuer_signed_bytes:
+   02020001000775f05a0740000000006400112233445566778899aabbccddeeff
+   ffeeddccbbaa99887766554433221100630dcd2966c4336691125448bbb25b4f
+   f412a49c732db2c8abc1b8581bd710dd94b2652334f11f00c2b844d351e64f05
+   4e9598542dba5f88595f4a45da21e232000003e9
+   issuer_signature:
+   f4e432c3acf244a0c5f8990a6d8704cb6fcadb7d1c1c48c51d5d55e15857cc76
+   31849ba6ff5ece9f4cc741efe57408ed7d3a903fa718596b9bc65c816d4fe20d
+   record_hash:
+   b3772734f2ad713baf6e06a16b4dacc567cae0d35b1eda2530bafb73d3f1b2e5
+   exporter_context_hash:
+   5110791a9d7997e5932918505b6a1c2ae3ca5044e3937ff5d8308359354efbc7
+   binding_input:
+   74747470732d62696e64696e672d76322d647261667431330000202122232425
+   262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3fb3772734f2ad
+   713baf6e06a16b4dacc567cae0d35b1eda2530bafb73d3f1b2e5
+   holder_proof:
+   d00e186bbf243d2a4af6b5dd1b30c5c949caee2f002967408e42aa2ac113d0ec
+   presentation:
+   02020001000775f05a0740000000006400112233445566778899aabbccddeeff
+   ffeeddccbbaa99887766554433221100630dcd2966c4336691125448bbb25b4f
+   f412a49c732db2c8abc1b8581bd710dd94b2652334f11f00c2b844d351e64f05
+   4e9598542dba5f88595f4a45da21e232000003e9f4e432c3acf244a0c5f8990a
+   6d8704cb6fcadb7d1c1c48c51d5d55e15857cc7631849ba6ff5ece9f4cc741ef
+   e57408ed7d3a903fa718596b9bc65c816d4fe20dd00e186bbf243d2a4af6b5dd
+   1b30c5c949caee2f002967408e42aa2ac113d0ec
+
+Appendix C.  Verification Cases and State Transitions
+
+   The accompanying machine-readable cases fix inputs and expected
+   outcomes before reporting results.  They include both holder lengths,
+   malformed/trailing objects, wrong selectors, invalid issuer/holder
+   proof, recomputed unkeyed tags, event/audience/context substitution,
+   future/past equality and exceedance, uint64 overflow, sample age/
+   uncertainty, grouping, early-data/direction/session mismatch and
+   selected-profile failures.
+
+
+
+
+
+
+Jorgen                    Expires 8 April 2027                 [Page 32]
+
+Internet-Draft                    TTTPS                     October 2026
+
+
+   Replay cases include concurrent first use, queued expiry, in-memory
+   capacity, restart with preserved or absent state, future-token
+   retention, policy-window widening, uncertain/confirmed completion and
+   owner fencing.  A finite same-key schedule explores interleavings; a
+   control without the final claim admits two effects.  The models are
+   specified tests, not field failure rates.  A PASS is limited to the
+   documented acceptance conditions.
+
+Appendix D.  Revision History and Decision Ledger
+
+   This informative appendix records design continuity, not a substitute
+   for the normative rules. -02 explicitly combined Roughtime chain
+   evidence and source quorum. -04 omitted its generation binding while
+   retaining verification language; -05 restored it. -07 introduced the
+   180-octet v2 and the public SHA baseline. -08 used a different
+   payload-bearing wire representation and added audit/direction/
+   recovery safeguards. -09 returned to the earlier wire family. -10
+   added profile/provenance ordering, -11 narrowed the core, and -12
+   fixed the epoch, dual-window and record-hash binding.
+
+   This revision carries those lessons through explicit source-adapter
+   scope, event binding, audit/live separation, optional recovery
+   boundaries, replay-safe commitment and a separately selected
+   direction-bound transcript.  It does not restore the -08 wire or
+   weaken the -12 final claim.  The 00–12 source hashes and the review
+   decision ledger accompany the source bundle.  A historical statement
+   that -05 was not separately archived is not repeated; the official
+   -05 archive exists.
+
+Author's Address
+
+   Heime Jorgen
+   Kenosian
+   Email: heime.jorgen@proton.me
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Jorgen                    Expires 8 April 2027                 [Page 33]

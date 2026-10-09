@@ -192,3 +192,40 @@ export function verifyPotRecordV2(
   }
   return { verdict: "intact", nonce: decoded.nonce };
 }
+
+
+// Explicit draft-13 transcript; legacy helpers above are never a fallback.
+export const DRAFT13_EXPORTER_LABEL = "EXPORTER-TTTPS-v2-draft13";
+const DRAFT13_DOMAIN = Buffer.from("tttps-binding-v2-draft13\0", "ascii");
+export function computeDraft13ExporterContext(record: Buffer, direction: 0 | 1 = 0): Buffer {
+  decodePotRecordV2(record);
+  if (direction !== 0 && direction !== 1) throw new Error("unknown holder direction");
+  return createHash("sha256").update(Buffer.concat([DRAFT13_DOMAIN, Buffer.from([direction]), createHash("sha256").update(record).digest()])).digest();
+}
+export function computeDraft13BindingInput(record: Buffer, exporterOutput: Buffer, direction: 0 | 1 = 0): Buffer {
+  computeDraft13ExporterContext(record, direction);
+  if (exporterOutput.length !== 32) throw new Error("TLS exporter output must be 32 octets");
+  return Buffer.concat([DRAFT13_DOMAIN, Buffer.from([direction]), exporterOutput, createHash("sha256").update(record).digest()]);
+}
+export function verifyDraft13BindingProof(record: Buffer, proof: Buffer, exporterOutput: Buffer, direction: 0 | 1 = 0, sharedSecret?: Buffer): { verdict: "intact" | "rejected"; reason?: string } {
+  const d = decodePotRecordV2(record);
+  const input = computeDraft13BindingInput(record, exporterOutput, direction);
+  if (d.holderAuthType === HOLDER_AUTH_ED25519) {
+    if (proof.length !== 64) return { verdict: "rejected", reason: "Ed25519 binding proof must be 64 octets" };
+    return ed25519Verify(null, input, issuerPublicKeyFromRaw(d.holderAuthData), proof)
+      ? { verdict: "intact" } : { verdict: "rejected", reason: "draft13 TLS holder proof mismatch" };
+  }
+  if (d.holderAuthType === HOLDER_AUTH_SHARED_SECRET) {
+    if (!sharedSecret || sharedSecret.length < 32 || proof.length !== 32) return { verdict: "rejected", reason: "shared-secret holder binding unavailable" };
+    const digest = createHash("sha256").update(sharedSecret).digest();
+    return timingSafeEqual(digest, d.holderAuthData) && timingSafeEqual(createHmac("sha256", sharedSecret).update(input).digest(), proof)
+      ? { verdict: "intact" } : { verdict: "rejected", reason: "draft13 TLS HMAC proof mismatch" };
+  }
+  return { verdict: "rejected", reason: "unsupported holder authentication type" };
+}
+export function draft13Freshness(ts: bigint, now: bigint, dispersion: bigint, pastWindow: bigint, futureSkew: bigint): boolean {
+  const max = (1n << 64n) - 1n;
+  if ([ts, now, pastWindow, futureSkew].some(v => v < 0n || v > max) || dispersion < 0n || dispersion > 0xffffffffn) return false;
+  if (ts > now) return ts - now <= futureSkew;
+  return pastWindow <= max - dispersion && now - ts <= pastWindow + dispersion;
+}
