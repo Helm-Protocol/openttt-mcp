@@ -1,3 +1,11 @@
+# Current Track A package
+
+Use `tttps-instance-reference-20261011-musl.tar.gz` for the static Rust reference.
+Its manifest SHA256 is `8b126deabb4057efc9e31b1a13763a64889a124966c3f0e36602f5d9eff926d9`.
+See `docs/ami-upgrade/TRACK-A.md` and its source/binary/test binding evidence.
+The first GNU archive below is historical and requires GLIBC_2.39 for Rust.
+Actual AWS boot remains outside the verified local scope.
+
 # Instance reference package
 
 `tttps-instance-reference-20261011.tar.gz` is the Linux x86_64 local reference

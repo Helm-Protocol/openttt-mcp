@@ -1,0 +1,42 @@
+   Compiling openttt-draft13-reference v0.13.0 (/home/axcpeter/openttt-mcp/rust-reference)
+    Finished `release` profile [optimized] target(s) in 3.24s
+     Running unittests src/lib.rs (openttt-mcp/rust-reference/target/x86_64-unknown-linux-musl/release/deps/openttt_draft13_reference-d9366e9fcd71ac89)
+
+running 3 tests
+test draft13::tests::directions_are_distinct ... ok
+test draft13::tests::rejects_legacy_and_wrong_lengths ... ok
+test draft13::appendix_vectors::shared_typescript_vectors_match_rust ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/export-vectors.rs (openttt-mcp/rust-reference/target/x86_64-unknown-linux-musl/release/deps/export_vectors-d2d611d31bbb364d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (openttt-mcp/rust-reference/target/x86_64-unknown-linux-musl/release/deps/openttt_draft13_reference-860778e65b7b6779)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/replay_and_json.rs (openttt-mcp/rust-reference/target/x86_64-unknown-linux-musl/release/deps/replay_and_json-fa04be9de6eea0f7)
+
+running 7 tests
+test capacity_preserves_live_claims ... ok
+test duplicate_keys_rejected_at_all_depths ... ok
+test expiry_allows_cleanup_without_live_eviction ... ok
+test lifetime_covers_remaining_validity_and_margin ... ok
+test malformed_unicode_and_json_rejected ... ok
+test atomic_concurrent_claim_has_one_winner ... ok
+test reject_invalid_clock_dispersion_and_overflow ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests openttt_draft13_reference
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

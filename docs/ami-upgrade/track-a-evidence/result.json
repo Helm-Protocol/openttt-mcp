@@ -1,0 +1,43 @@
+{
+  "tested_source_revision": "39f08ea73166d9928f3d743bbe3882c87360050c",
+  "implementation_revision": "64736ed94598a358ed972f7d7fa477de50b26e12",
+  "binary_target": "x86_64-unknown-linux-musl",
+  "binary_sha256": "65f0b55e2b0821cd9bff6818e5f222f565b8aeebf6e9097a42ea2db585bca37d",
+  "archive_sha256": "fa5831e02f71dbf5b3f847b41d35093704be1ea7f7b8afdf2efd1f96bf74d340",
+  "manifest_sha256": "8b126deabb4057efc9e31b1a13763a64889a124966c3f0e36602f5d9eff926d9",
+  "elf_no_interpreter": true,
+  "elf_no_shared_libraries": true,
+  "musl_rust_tests": {
+    "codec": 3,
+    "replay_json": 7,
+    "failed": 0
+  },
+  "frozen_draft13_vector_parity": true,
+  "installed_tls_cases": 21,
+  "offline_install_and_rollback": "PASS",
+  "running_binary": {
+    "gate_pid": 3974686,
+    "rust_pid": 3974706,
+    "running_binary_sha256": "65f0b55e2b0821cd9bff6818e5f222f565b8aeebf6e9097a42ea2db585bca37d",
+    "installed_binary_sha256": "65f0b55e2b0821cd9bff6818e5f222f565b8aeebf6e9097a42ea2db585bca37d"
+  },
+  "aws_runtime_applied": false,
+  "new_aws_resources": 0,
+  "ami_mutations": 0,
+  "catalog_mutations": 0,
+  "memorydb_activated": false,
+  "inventory_scope": "Configured account 060077938016, 17 enabled regions, running/stopped/pending instances: none",
+  "catalog_product": "prod-hdbmavwcguefm",
+  "catalog_visibility_observed": "Draft",
+  "limits": [
+    "AWS/AL2023 boot not measured",
+    "No guaranteed 0% Marketplace review policy claim",
+    "Node18+ and actual kernel/XDP prerequisites still required",
+    "No complete production business DB or MemoryDB integration"
+  ],
+  "logs_sha256": {
+    "musl-build.log": "5275c0d172170c6eb857ebbbede3848234e01634c0773eb543b75aa4637ecb20",
+    "musl-tests.log": "56482b6aa893d0e19709bcb52611741b848f7e49dbc485f326da0d45ab58fbc3",
+    "gate-isolated.log": "46103de6e484fac867b4c414cdc2983c61e0e59bd213fb163a7d9690057b6d2c"
+  }
+}
