@@ -17,7 +17,10 @@ const a=new Client(),b=new Client();
 function check(name,r,status){assert.equal(r.status,status,name);results.push({name,status:r.status,reason:r.body.reason||r.body.error});}
 const req={event_b64,holder_public:pub};let accepted;
 try{
- check('healthy real installed service',await a.request('/health'),200);
+ let ready;
+ for(let i=0;i<300;i++){try{ready=await a.request('/health');if(ready.status===200)break;}catch{}await new Promise(r=>setTimeout(r,100));}
+ assert.equal(ready?.status,200,'time synchronization and service readiness within 30s');
+ check('healthy real installed service',ready,200);
  check('unauthenticated seal rejected',await a.request('/v2/seal',req),401);
  check('legacy route rejected',await a.request('/v1/legacy'),410);
  check('duplicate escaped JSON keys rejected',await a.request('/v2/verify','{"event_b64":"QQ==","\\u0065vent_b64":"Qg=="}'),400);

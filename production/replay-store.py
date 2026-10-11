@@ -27,6 +27,7 @@ if legacy and 'receipt' in {r[1] for r in legacy}:
         db.execute('INSERT INTO receipts VALUES (?,?,?)',(claim,record,receipt))
         admitted=int(json.loads(receipt)['admitted_tai_us'])
         db.execute('UPDATE clock_state SET high_water_us=max(high_water_us,?) WHERE id=1',(admitted,))
+db.execute('CREATE TABLE IF NOT EXISTS usage(hour INTEGER PRIMARY KEY,quantity INTEGER NOT NULL,reported INTEGER NOT NULL DEFAULT 0)')
 db.commit()
 tracking_cache=None
 tracking_checked=0.0
@@ -51,6 +52,11 @@ for line in sys.stdin:
         if q['op'] == 'clock':
             now,offset,dispersion=now_tai()
             result = {'id':q['id'], 'ok':True, 'now_us':now, 'offset_seconds':offset,'dispersion_us':dispersion}
+        elif q['op'] == 'seal_usage':
+            # Persist a count before acknowledging an issued seal. No AWS call here.
+            hour=int(time.time())//3600
+            db.execute('INSERT INTO usage(hour,quantity) VALUES (?,1) ON CONFLICT(hour) DO UPDATE SET quantity=quantity+1',(hour,))
+            db.commit();result={'id':q['id'],'ok':True}
         elif q['op'] == 'claim':
             db.execute('BEGIN IMMEDIATE')
             now,_,_=now_tai()

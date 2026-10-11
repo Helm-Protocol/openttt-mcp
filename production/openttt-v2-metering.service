@@ -1,0 +1,18 @@
+[Unit]
+Description=Customer EC2 role Marketplace metering for TTTPS v2 seals
+After=network-online.target openttt-v2-init.service
+Requires=openttt-v2-init.service
+[Service]
+User=openttt
+Group=openttt
+ExecStart=/usr/bin/python3 /opt/openttt/v2/production/metering.py
+Restart=on-failure
+RestartSec=5
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+ReadWritePaths=/var/lib/openttt/v2
+UMask=0077
+[Install]
+WantedBy=multi-user.target

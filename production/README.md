@@ -62,3 +62,18 @@ not a live partial copy of its main file. Restore the same signer and replay
 database together. For multi-node customer deployment, use the separately
 prepared MemoryDB integration and customer business idempotency design; it is
 not enabled or billed by this AMI update.
+
+## Marketplace usage and customer IAM
+
+Each successful v2 seal durably records one metered unit before acknowledgement.
+`openttt-v2-metering.service` reports closed UTC hourly buckets for the existing
+product code and the current t3.micro/t3.small/t3.medium dimension. It uses only
+the customer's EC2 instance IAM role (`aws-marketplace:MeterUsage`) and checks
+subscription/permissions with a zero-quantity DryRun. Network/IAM failures keep
+the same counts for retry; records older than the API's six-hour reporting limit
+are retained for reconciliation. Monitor the unit journal; offline verification
+still works, but Marketplace usage reporting requires access to AWS endpoints.
+The signer, local admission and replay remain independent of that network path.
+No seller keys, new AWS resources or MemoryDB are installed. Paid MeterUsage
+cannot be demonstrated on an un-ingested seller image; buyer billing requires
+Marketplace ingestion, a subscribed buyer launch and its instance role.

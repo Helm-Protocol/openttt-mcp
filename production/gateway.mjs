@@ -50,6 +50,7 @@ const server=https.createServer({key:fs.readFileSync(path.join(config,'tls.key')
    if(url==='/v2/seal'){
     if(!/^[0-9a-f]{64}$/i.test(body.holder_public||''))throw new Error('INVALID_HOLDER');
     const record=V2.encodePotRecordV2({holderAuthType:1,algId:1,tsTaiUs:BigInt(nowUs),dispersionUs:currentClock.dispersion_us,ctxId:e.ctx,nonce:crypto.randomBytes(16),holderAuthData:Buffer.from(body.holder_public,'hex'),issuerKeyId:1},signer);
+    const usage=await store.call({op:'seal_usage'});if(!usage.ok)throw new Error('METERING_STORE_UNAVAILABLE');
     send(res,200,{record_hex:record.toString('hex'),event_sha256:e.hash.toString('hex'),issuer_public:issuer.toString('hex')});
    }else{
     if(!/^[0-9a-f]{360}$/i.test(body.record_hex||'')||!/^[0-9a-f]{128}$/i.test(body.binding_proof||''))throw new Error('INVALID_RECORD_OR_PROOF');
