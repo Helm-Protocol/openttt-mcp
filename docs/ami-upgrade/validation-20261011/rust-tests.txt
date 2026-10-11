@@ -1,0 +1,41 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.43s
+     Running unittests src/lib.rs (openttt-mcp/rust-reference/target/debug/deps/openttt_draft13_reference-b354efb9880e4e01)
+
+running 3 tests
+test draft13::tests::directions_are_distinct ... ok
+test draft13::tests::rejects_legacy_and_wrong_lengths ... ok
+test draft13::appendix_vectors::shared_typescript_vectors_match_rust ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running unittests src/bin/export-vectors.rs (openttt-mcp/rust-reference/target/debug/deps/export_vectors-75ed6fc7c2ccdee9)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (openttt-mcp/rust-reference/target/debug/deps/openttt_draft13_reference-a9f765682e061fdf)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/replay_and_json.rs (openttt-mcp/rust-reference/target/debug/deps/replay_and_json-54e50f347e9d6796)
+
+running 7 tests
+test capacity_preserves_live_claims ... ok
+test atomic_concurrent_claim_has_one_winner ... ok
+test expiry_allows_cleanup_without_live_eviction ... ok
+test lifetime_covers_remaining_validity_and_margin ... ok
+test malformed_unicode_and_json_rejected ... ok
+test duplicate_keys_rejected_at_all_depths ... ok
+test reject_invalid_clock_dispersion_and_overflow ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests openttt_draft13_reference
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

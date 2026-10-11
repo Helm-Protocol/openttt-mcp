@@ -10,4 +10,6 @@ Manifest SHA256 inside the archive:
 Obtain this hash from a trusted repository revision/handoff. The archive does
 not upgrade an AMI snapshot or start services. The included Rust executable is
 reused from the previously verified 2026-10-10 reference artifact; no new AWS
-boot validation is claimed. New XDP scripts have syntax/build checks only.
+boot validation is claimed. Subsequent same-revision local execution evidence is in
+`docs/ami-upgrade/validation-20261011/result.json`; this supersedes the original
+syntax-only validation scope without changing the archive.

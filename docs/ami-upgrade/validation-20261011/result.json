@@ -1,0 +1,83 @@
+{
+  "status": "PASS",
+  "tested_source_revision": "64736ed94598a358ed972f7d7fa477de50b26e12",
+  "evidence_time_utc": "2026-10-11T08:21:25.195066+00:00",
+  "repo": "https://github.com/Helm-Protocol/openttt-mcp",
+  "source_sha256": {
+    "demo/gate_challenge.mjs": "0b436d22b61f3fb594a72bdfce8f4f3bfe97d65d69e77460e964a1533770a477",
+    "demo/rust_verifier.mjs": "5d45e2f421674f1f9a05f3c84f006b1892eb537f3f98d5405c25574d0c619928",
+    "demo/strict_json.mjs": "20eeea748d039ceb3f9dbc0b71f9add077964bfcbf84f65a417e5b2bf5fb94b1",
+    "demo/memorydb_replay.mjs": "b540b4f5e3718838c6e013ebb1d4ce6c46a3eebe6f7f09f734b3ed7c09be1fac",
+    "rust-reference/src/main.rs": "905e102e0a84747cb5bcb38ce8c0765b8d19d654c59e4998244550ef1d438e3a",
+    "rust-reference/src/lib.rs": "f1459c83aeb0c9abefe781805c5474e4f064f0243ef14773a4ae3cba36e82d81",
+    "rust-reference/src/draft13.rs": "55d6458fe50e38b1e5afaafb70ed9148f0bedf73c4de9f04d8897dde0fd56e07",
+    "rust-reference/src/replay.rs": "f92854294325fb6effa35cf2b8bdca21725e48e3ab5293dab16103100c094e28",
+    "rust-reference/src/strict_json.rs": "8b62185aa2b28a778883c95b21f35cfd37bf1d44078fcc11d56fa0fba71d896e",
+    "rust-reference/Cargo.lock": "44bb7a7265f981f797261ffb319be5a513cc33d78ee7247fe6f87449c0268bb6",
+    "infra/tttps-xdp/tttps_xdp.c": "71ec67b1dd700025de98026c347b7e50a02e3968f2ac1282eacf7a9653b3ce52",
+    "infra/tttps-xdp/install-instance.sh": "7ccb63e50b5dce2a7b771d898252fcb3754285da3d33c5eb5aa2588db06e24ad",
+    "infra/tttps-xdp/tttps-xdp-load.sh": "35428e4fb5c89e6add63a868aab76118ef36112723a64547adcfa1c04b13bf15",
+    "infra/tttps-xdp/tttps-xdp-unload.sh": "8508311ff466c0b2c0feab7ad49976fc7df7b6ec79949725b7254334747ef41a",
+    "infra/tttps-xdp/tttps-xdp.service": "56b92ba6e74bb8756995e00a63c1ebb674cdab11797cc4d1ecf52345c2342d45",
+    "scripts/standalone/install-local.sh": "4243dd8a24de9aa46e268dd2511aaccd6f9983ee5cbd2a2a01a98f0ac2c1800b",
+    "scripts/standalone/run-local.sh": "a4487e5eb1dd3d5ac75bbfae6fe91a18582eca7011db5bb7110c5fa7754171e0"
+  },
+  "archive_sha256": "ae623c2408eaec78189eab79e38cd7b95ca77aa8a960fa4d93c4bfc2bfe33c0a",
+  "rust_build_packaged_and_running_sha256": "a1e3b0ff31551bbeb1c792162e52f955a37b463c6d8dd307b0648b63815a64d7",
+  "tests": {
+    "node_security": 5,
+    "rust_codec": 3,
+    "rust_replay_json": 7,
+    "installed_real_tls_cases": 21,
+    "rejected_db_drift": 0,
+    "tls12_rejected": true,
+    "offline_package_install": "PASS",
+    "existing_release_refusal": "PASS",
+    "corrupt_package_refusal": "PASS",
+    "prior_release_rollback_health": "PASS",
+    "xdp_instance_file_install": "PASS",
+    "xdp_existing_install_refusal": "PASS",
+    "xdp_real_generic_attachment": "PASS",
+    "xdp_existing_program_refusal": "PASS",
+    "xdp_kernel_pass_drop": {
+      "first": "XDP_PASS",
+      "second": "XDP_DROP",
+      "actual": [
+        {
+          "retval": 2,
+          "duration": 7677
+        },
+        {
+          "retval": 1,
+          "duration": 1527
+        }
+      ]
+    },
+    "xdp_foreign_program_preservation": "PASS",
+    "xdp_owned_program_unload": "PASS"
+  },
+  "isolation": {
+    "network": "private unshare namespace, loopback and dummy only",
+    "filesystem": "private /etc overlay and unit/libexec bind mounts",
+    "bpffs": "private mount",
+    "production_xdp_id_after": 465,
+    "production_gate_pid_after": 3261203,
+    "cloud_calls": "none during validation",
+    "memorydb_connections": 0
+  },
+  "limits": [
+    "Local GCP kernel only; not AWS AMI boot",
+    "No volumetric DDoS or GRG L4 proof claim",
+    "No full production MemoryDB durability/failover test",
+    "Systemd units were installed in private mounts; no full systemd boot test",
+    "Rollback restored prior reference release health; customer business state migration not covered"
+  ],
+  "logs_sha256": {
+    "node-tests.log": "6ed2958a230ba67333780d35c762184d43f5e20c4d5344a85bd2a407b3a40250",
+    "rust-tests.log": "746ae03967f4ec282bf4020e0260f7a5ddc7ba2051476237ff0c7e5a90697c44",
+    "build.log": "85c8dbac64ed6a362d668bf3988686e26e947620bb15cfdbe2e999a0ff8261b2",
+    "gate-isolated.log": "0815fb07f4bec0e0ea58aac0127686185added8a72fec53517bf677a5db18b20",
+    "xdp-isolated-v2.log": "ccbcc1ab16691834b2fe7c54300ea9a64003414d4ef52dec07a520825a25ba29"
+  },
+  "harness_initial_failure": "Initial foreign-program simulation used an attach without prior detach; ip rejected replacement. Corrected simulation, no product source changes; initial log retained."
+}

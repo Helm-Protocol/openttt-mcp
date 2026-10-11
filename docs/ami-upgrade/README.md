@@ -64,3 +64,7 @@ The new portable deployment scripts require actual customer kernel/attachment
 verification after explicit installation; historical tests do not cover these
 new scripts. No AWS boot test or MemoryDB service integration is asserted.
 Draft13 baseline tags remain frozen; no Draft14 work is included in this release.
+
+## Same-revision local execution evidence
+
+[MEASURED: validation-20261011/result.json] Revision 64736ed was verified by fresh Node/Rust tests, rebuilt-to-packaged-to-running binary equality, offline install, installed TLS regression, prior reference rollback, private-namespace XDP installation/attachment/pass-drop/ownership guards/unload. This is local kernel evidence, not AWS boot or full systemd boot validation.

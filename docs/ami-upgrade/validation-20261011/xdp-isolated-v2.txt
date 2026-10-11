@@ -1,0 +1,9 @@
+make: Entering directory '/home/axcpeter/reports/revision-validation-20261011/xdp-work2/extract/tttps-instance-reference/infra/tttps-xdp'
+make: Nothing to be done for 'all'.
+make: Leaving directory '/home/axcpeter/reports/revision-validation-20261011/xdp-work2/extract/tttps-instance-reference/infra/tttps-xdp'
+Installed local files only. Review config, mount bpffs if needed, then explicitly daemon-reload and activate services.
+Release path must be absolute and unused
+tttps-xdp attached iface=testgate mode=generic pin=/sys/fs/bpf/tttps_xdp
+Interface already has XDP id=1099; refusing replacement
+XDP owner mismatch; refusing detach
+PASS: install, overwrite refusal, attach, replacement refusal, kernel pass/drop, foreign ownership guard, rollback

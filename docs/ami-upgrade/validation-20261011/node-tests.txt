@@ -1,0 +1,35 @@
+TAP version 13
+# Subtest: decoded duplicate keys rejected before collapse
+ok 1 - decoded duplicate keys rejected before collapse
+  ---
+  duration_ms: 3.924004
+  ...
+# Subtest: valid JSON matches native parser with distinct object scopes
+ok 2 - valid JSON matches native parser with distinct object scopes
+  ---
+  duration_ms: 1.497768
+  ...
+# Subtest: malformed and excessively deep input rejected
+ok 3 - malformed and excessively deep input rejected
+  ---
+  duration_ms: 0.724468
+  ...
+# Subtest: unpaired surrogates rejected before private verifier transport
+ok 4 - unpaired surrogates rejected before private verifier transport
+  ---
+  duration_ms: 0.323584
+  ...
+# Subtest: MemoryDB contract preparation opens no connection and rejects untrusted endpoints
+ok 5 - MemoryDB contract preparation opens no connection and rejects untrusted endpoints
+  ---
+  duration_ms: 133.769083
+  ...
+1..5
+# tests 5
+# suites 0
+# pass 5
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 291.567097
