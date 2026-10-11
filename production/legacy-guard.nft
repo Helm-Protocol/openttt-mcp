@@ -1,0 +1,7 @@
+table inet tttps_legacy_guard {
+  chain input {
+    type filter hook input priority -5; policy accept;
+    iifname != "lo" tcp dport 8082 drop
+    iifname != "lo" udp dport 8443 drop
+  }
+}

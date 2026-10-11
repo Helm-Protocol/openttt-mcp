@@ -1,0 +1,13 @@
+[Unit]
+Description=Initialize customer-specific OpenTTT v2 identity and interface
+After=network-online.target openttt-server.service
+Wants=network-online.target
+Before=tttps-xdp.service openttt-v2.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/openttt-v2-first-boot
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

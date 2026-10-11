@@ -1,0 +1,28 @@
+[Unit]
+Description=OpenTTT 180B v2 customer-local TLS verifier and durable admission
+After=network-online.target chronyd.service openttt-server.service openttt-v2-init.service tttps-xdp.service tttps-legacy-guard.service
+Wants=network-online.target chronyd.service
+Requires=openttt-v2-init.service tttps-xdp.service tttps-legacy-guard.service
+
+[Service]
+Type=simple
+User=openttt
+Group=openttt
+EnvironmentFile=-/etc/openttt/v2/service.env
+ExecStart=/usr/bin/node /opt/openttt/v2/production/gateway.mjs
+Restart=on-failure
+RestartSec=3
+KillMode=control-group
+TimeoutStopSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/openttt/v2 /etc/openttt/v2 /etc/tttps-xdp.conf
+UMask=0077
+LimitNOFILE=4096
+TasksMax=64
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target

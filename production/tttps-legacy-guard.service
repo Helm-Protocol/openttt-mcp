@@ -1,0 +1,12 @@
+[Unit]
+Description=Keep the previous 143B backend available only for local maintenance
+Before=openttt-server.service openttt-v2.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /etc/openttt/v2/legacy-guard.nft
+ExecStop=/usr/sbin/nft delete table inet tttps_legacy_guard
+
+[Install]
+WantedBy=multi-user.target
