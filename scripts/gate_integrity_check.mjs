@@ -14,7 +14,7 @@ const results=[];
 class Client {
  constructor(){this.agent=new https.Agent({keepAlive:true,maxSockets:1,minVersion:'TLSv1.3',maxVersion:'TLSv1.3'});}
  async request(path, body, plain=false,headers={}){
-  const data=body===undefined?undefined:JSON.stringify(body);
+  const data=body===undefined?undefined:typeof body==='string'?body:JSON.stringify(body);
   return new Promise((resolve,reject)=>{
    const req=(plain?http:https).request({host,port,path,method:data?'POST':'GET',servername:'api.kenosian.com',agent:plain?undefined:this.agent,headers:{...(data?{'content-type':'application/json','content-length':Buffer.byteLength(data)}:{}),...headers}},res=>{
     let text='';res.on('data',c=>text+=c);res.on('end',()=>{let body;try{body=JSON.parse(text);}catch{body=text;}resolve({status:res.statusCode,headers:res.headers,body});});
@@ -35,6 +35,20 @@ try{
  const legacy=await bob.request('/v1/legacy');assert.equal(legacy.status,410);assert.equal(legacy.body.error,'LEGACY_143B_NOT_ACCEPTED');
  const token=(await bob.request('/token')).body;
  const body={record_hex:token.record_hex,action:token.action};
+ const parserStats=(await bob.request('/stats')).body;
+ for (const [name,raw] of [
+   ['duplicate top-level key','{"record_hex":"00","record_hex":"11"}'],
+   ['duplicate nested escaped key','{"action":{"amount":1,"\\u0061mount":2}}'],
+   ['invalid Unicode surrogate','{"action":{"to":"\\ud800","amount":1}}'],
+ ]) {
+   const r=await bob.request('/v2/verify',raw); assert.equal(r.status,400);
+   results.push({name,status:r.status,error:r.body.error});
+ }
+ const contentType=await bob.request('/v2/verify',body,false,{'content-type':'text/plain'});
+ assert.equal(contentType.status,415); results.push({name:'non-JSON content type',status:contentType.status});
+ const afterParserStats=(await bob.request('/stats')).body;
+ assert.equal(afterParserStats.total,parserStats.total); // denied before verification/nonce/commit
+ assert.equal((await bob.request('/health')).body.status,'ok');
  await assert.rejects(eve.request('/v2/verify',body,true));
  results.push({name:'plaintext transport rejected',status:'connection rejected'});
  check('TLS token without holder proof',await eve.request('/v2/verify',body),'HOLDER_PROOF_REQUIRED');

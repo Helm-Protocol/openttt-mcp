@@ -2,12 +2,14 @@
 Description=TTTPS L4 XDP ingress rate limiter
 After=network-online.target
 Wants=network-online.target
+ConditionPathExists=/etc/tttps-xdp.conf
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/local/libexec/tttps-xdp-load ens4 /opt/helm-protocol/openttt-mcp/infra/tttps-xdp
-ExecStop=/usr/local/libexec/tttps-xdp-unload ens4
+EnvironmentFile=/etc/tttps-xdp.conf
+ExecStart=/usr/local/libexec/tttps-xdp-load ${TTTPS_XDP_IFACE} ${TTTPS_XDP_BASE}
+ExecStop=/usr/local/libexec/tttps-xdp-unload ${TTTPS_XDP_IFACE}
 
 [Install]
 WantedBy=multi-user.target

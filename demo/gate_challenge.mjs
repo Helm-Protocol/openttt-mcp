@@ -20,6 +20,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { startRustVerifier } from './rust_verifier.mjs';
+import { parseStrictJson } from './strict_json.mjs';
 const require = createRequire(import.meta.url);
 const here = path.dirname(fileURLToPath(import.meta.url));
 const V2 = require(path.join(here, "..", "dist", "pot_record_v2.js"));
@@ -86,7 +87,7 @@ function mintBob() {
 }
 let bobRecordHex = mintBob();
 
-const replay = new Set();
+const replay = new Map();
 const clients = new Set(); // SSE
 const MAX_REPLAY_ENTRIES = 100000;
 const MAX_SSE_CLIENTS = 64;
@@ -134,14 +135,21 @@ async function gate(body, clientIp, socket) {
     if (!checked.ok) throw new Error(checked.reason || 'RECORD_REJECTED');
     // (3) replay on the signed nonce
     const nonce = rec.subarray(32, 48).toString("hex");
-    if (replay.has(nonce)) throw new Error("REPLAY_LEDGER_CLAIMED");
+    const replayKey = `${rec.subarray(16,32).toString("hex")}:${nonce}`;
+    const claimNow = performance.now();
+    if ((replay.get(replayKey) ?? 0) > claimNow) throw new Error("REPLAY_LEDGER_CLAIMED");
+    const ttlMs = checked.replayTtlMs;
+    if (!Number.isSafeInteger(ttlMs) || ttlMs < 1 || ttlMs > 602000) throw new Error("REPLAY_TTL_REQUIRED");
     // pass — the ONLY path that writes the DB
     const from = canaryDb.get("account:bob"), to = canaryDb.get(action.to);
     if (!to || to === from) throw new Error("UNKNOWN_TARGET");
     if (from.balance < action.amount || !Number.isSafeInteger(to.balance + action.amount)) throw new Error("INSUFFICIENT_BALANCE");
     // Synchronous claim + commit: no await or callback can interleave here.
+    if (replay.size >= MAX_REPLAY_ENTRIES) {
+      for (const [key, expiry] of replay) if (expiry <= claimNow) replay.delete(key);
+    }
     if (replay.size >= MAX_REPLAY_ENTRIES) throw new Error("REPLAY_LEDGER_CAPACITY");
-    replay.add(nonce);
+    replay.set(replayKey, claimNow + ttlMs);
     from.balance -= action.amount; to.balance += action.amount;
   } catch (e) { verdict = "REJECT"; reason = e.message; }
   const hAfter = dbHash();
@@ -316,18 +324,19 @@ const handler = (req, res) => {
     return res.end(JSON.stringify({error:'LEGACY_143B_NOT_ACCEPTED',recordSize:143,migration:'Reissue a 180B v2 record; use /v2/verify. Frozen AMIs remain unchanged.'}));
   }
   if (req.method === "POST" && (url === "/v2/verify" || url === "/mcp/db-write")) {
-    let b = ""; let bodyBytes = 0; let bodyRejected = false;
+    const chunks = []; let bodyBytes = 0; let bodyRejected = false;
+    if (!/^application\/json(?:\s*;|$)/i.test(req.headers["content-type"] ?? "")) { res.writeHead(415); return res.end('{"error":"application_json_required"}'); }
     const timer = setTimeout(() => req.destroy(), REQUEST_TIMEOUT_MS);
     const clientIp = (req.socket.remoteAddress || "?").replace("::ffff:", "");
     const contentLength = Number(req.headers["content-length"] ?? 0);
     req.setTimeout(REQUEST_TIMEOUT_MS, () => req.destroy());
     if (Number.isFinite(contentLength) && contentLength > MAX_BODY_BYTES) { clearTimeout(timer); res.writeHead(413); res.end("{\"error\":\"body_too_large\"}"); req.destroy(); return; }
     if (!demoRateAllowed(clientIp)) { clearTimeout(timer); res.writeHead(429, { "content-type": "application/json", "retry-after": "60" }); return res.end("{\"error\":\"rate_limit_exceeded\"}"); }
-    req.on("data", (c) => { bodyBytes += c.length; if (bodyBytes > MAX_BODY_BYTES) { bodyRejected = true; res.writeHead(413); res.end("{\"error\":\"body_too_large\"}"); req.destroy(); return; } b += c; });
+    req.on("data", (c) => { bodyBytes += c.length; if (bodyBytes > MAX_BODY_BYTES) { bodyRejected = true; res.writeHead(413); res.end("{\"error\":\"body_too_large\"}"); req.destroy(); return; } chunks.push(c); });
     req.on("end", async () => {
       clearTimeout(timer);
       if (bodyRejected) return;
-      let parsed; try { parsed = JSON.parse(b); } catch { res.writeHead(400); return res.end("{\"error\":\"bad json\"}"); }
+      let parsed; try { parsed = parseStrictJson(new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks))); } catch (error) { res.writeHead(400, { "content-type": "application/json" }); return res.end(JSON.stringify({ error: error.message === "DUPLICATE_JSON_KEY" ? "duplicate_json_key" : "bad_json" })); }
       // Serialize claim+commit with verification so another accepted write cannot
       // appear as DB drift on a concurrently rejected request. Bound pending work.
       if (queuedGates>=64) {res.writeHead(503);return res.end('{"error":"gate_busy"}');}
@@ -335,15 +344,18 @@ const handler = (req, res) => {
       const work=gateTail.then(()=>gate(parsed,clientIp,req.socket));
       gateTail=work.catch(()=>{});
       let ev;try {ev=await work;}finally {queuedGates--;}
-      res.writeHead(ev.verdict === "ALLOW" ? 200 : 403, { "content-type": "application/json" });
+      const unavailable = /^(RUST_VERIFIER_(UNAVAILABLE|TIMEOUT)|REPLAY_LEDGER_CAPACITY|REPLAY_TTL_REQUIRED)$/.test(ev.reason);
+      res.writeHead(ev.verdict === "ALLOW" ? 200 : unavailable ? 503 : 403, { "content-type": "application/json" });
       res.end(JSON.stringify({ req_id: ev.reqId, verdict: ev.verdict, reason: ev.reason, latency_ms: ev.latencyMs, db_hash_before: ev.hBefore, db_hash_after: ev.hAfter, state_drift: ev.drift }));
     });
     return;
   }
   res.writeHead(404); res.end();
 };
-const plain = http.createServer(handler);
-const secure = https.createServer({ minVersion: "TLSv1.3", maxVersion: "TLSv1.3", cert: fs.readFileSync(TLS_CERT), key: fs.readFileSync(TLS_KEY) }, handler);
+// Check unfinished headers promptly; Node's default sweep is 30 seconds.
+const plain = http.createServer({ connectionsCheckingInterval: 1000 }, handler);
+const secure = https.createServer({ connectionsCheckingInterval: 1000, handshakeTimeout: REQUEST_TIMEOUT_MS, minVersion: "TLSv1.3", maxVersion: "TLSv1.3", cert: fs.readFileSync(TLS_CERT), key: fs.readFileSync(TLS_KEY) }, handler);
+secure.on("tlsClientError", (_error, socket) => socket.destroy());
 // TLS terminates directly at this port; plaintext connections never reach the gate.
 const server = secure;
 for (const srv of [plain, secure]) {

@@ -1,5 +1,6 @@
 CLANG ?= clang
-CFLAGS ?= -O2 -g -target bpf -I/usr/include/x86_64-linux-gnu
+MULTIARCH := $(shell $(CC) -dumpmachine)
+CFLAGS ?= -O2 -g -target bpf -I/usr/include/$(MULTIARCH)
 
 all: tttps_xdp.o
 
